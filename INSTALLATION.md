@@ -11,7 +11,7 @@
 ### 1. Install Dependencies
 
 ```bash
-cd copilot-snapshot-extension
+cd Copilot-Interaction-Archiver
 npm install
 ```
 
@@ -24,7 +24,7 @@ npm run compile
 ### 3. Test the Extension (Development)
 
 **Option A: Launch Extension Development Host**
-1. Open the `copilot-snapshot-extension` folder in VS Code
+1. Open the `Copilot-Interaction-Archiver` folder in VS Code
 2. Press `F5` to launch the Extension Development Host
 3. In the new window, open your workspace (e.g., `RECAP/tic-tac-toe_repro/workspace1-copilot`)
 4. Start using Copilot - snapshots will be captured automatically
@@ -37,7 +37,7 @@ npm install -g @vscode/vsce
 # Package the extension
 vsce package
 
-# This creates copilot-snapshot-<version>.vsix
+# This creates copilot-archiver-<version>.vsix
 # Install it via VS Code: Extensions > ... > Install from VSIX
 ```
 
@@ -60,14 +60,14 @@ The extension requires the GitHub Copilot Chat log file. This is usually enabled
 Snapshots are stored in your workspace at:
 ```
 your-workspace/
-  snapshots/
+  .snapshots/
     0/
       index.html
       script.js
       _snapshot_metadata.json
     1/
       ...
-    copilot_debug_messages/ # JSON outputs of the session
+    copilot_debug_messages/           # JSON outputs of the session
       your-workspace-compact.json
       your-workspace-incremental.jsonl
       your-workspace.json
