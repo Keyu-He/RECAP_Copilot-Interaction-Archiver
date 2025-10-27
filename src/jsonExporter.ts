@@ -51,15 +51,15 @@ export class JsonExporter {
         this.sessionId = path.basename(workspacePath);
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         this.jsonOutputEnabled = config.get<boolean>('jsonOutputEnabled', true);
-        this.jsonOutputDir = config.get<string>('jsonOutputDir', 'copilot_debug_messages');
         this.snapshotsOutputPath = config.get<string>('outputPath', '.snapshots');
+        this.jsonOutputDir = config.get<string>('jsonOutputDir', path.join(this.snapshotsOutputPath, 'copilot_debug_messages'));
     }
 
     updateConfigFromSettings() {
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         this.jsonOutputEnabled = config.get<boolean>('jsonOutputEnabled', true);
-        this.jsonOutputDir = config.get<string>('jsonOutputDir', 'copilot_debug_messages');
         this.snapshotsOutputPath = config.get<string>('outputPath', '.snapshots');
+        this.jsonOutputDir = config.get<string>('jsonOutputDir', path.join(this.snapshotsOutputPath, 'copilot_debug_messages'));
     }
 
     recordDebugLine(timestampRaw: string, rawMessagesJson: string) {
@@ -180,30 +180,55 @@ export class JsonExporter {
         if (!fs.existsSync(snapshotsDir)) {
             return compactTurns;
         }
+
+        // Read all snapshot metadata
         const entries = fs.readdirSync(snapshotsDir, { withFileTypes: true });
+        const snapshots: Array<{
+            snapshotIndex: number;
+            turnCount: number;
+            metadata: any;
+            snapshotDir: string;
+        }> = [];
+
         for (const entry of entries) {
-            if (!entry.isDirectory() || !entry.name.startsWith('turn_')) continue;
-            const match = entry.name.match(/^turn_(\d+)$/);
-            if (!match) continue;
-            const turnIndex = parseInt(match[1], 10);
+            if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
+            const snapshotIndex = parseInt(entry.name, 10);
+            if (isNaN(snapshotIndex)) continue;
+
             const snapshotDir = path.join(snapshotsDir, entry.name);
             const metadataPath = path.join(snapshotDir, '_snapshot_metadata.json');
             if (!fs.existsSync(metadataPath)) continue;
+
             try {
                 const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf-8'));
-                if (turnIndex >= 0 && turnIndex < compactTurns.length) {
-                    const relPath = path.relative(path.dirname(workspacePath), snapshotDir);
-                    compactTurns[turnIndex]['code_snapshot'] = {
-                        path: relPath,
-                        timestamp: metadata.timestamp,
-                        files_count: metadata.files_count,
-                        total_size_bytes: metadata.total_size_bytes
-                    };
-                }
+                const turnCount = metadata.agent_chat_history?.turn_count ?? 0;
+                snapshots.push({ snapshotIndex, turnCount, metadata, snapshotDir });
             } catch (e) {
                 console.warn(`Warning: Could not read metadata from ${metadataPath}: ${e}`);
             }
         }
+
+        // For each turn, find the latest snapshot that includes that turn
+        for (let turnIndex = 0; turnIndex < compactTurns.length; turnIndex++) {
+            // Find all snapshots with turn_count = turnIndex + 1
+            const candidateSnapshots = snapshots.filter(s => s.turnCount === turnIndex + 1);
+
+            if (candidateSnapshots.length > 0) {
+                // Pick the snapshot with the highest snapshotIndex
+                const bestSnapshot = candidateSnapshots.reduce((prev, curr) =>
+                    curr.snapshotIndex > prev.snapshotIndex ? curr : prev
+                );
+
+                const relPath = path.relative(path.dirname(workspacePath), bestSnapshot.snapshotDir);
+                compactTurns[turnIndex]['code_snapshot'] = {
+                    path: relPath,
+                    timestamp: bestSnapshot.metadata.timestamp,
+                    files_count: bestSnapshot.metadata.files_count,
+                    total_size_bytes: bestSnapshot.metadata.total_size_bytes
+                };
+            }
+        }
+
         return compactTurns;
     }
 

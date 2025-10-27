@@ -2,15 +2,11 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "keyuhe",
   "repository": {
     "type": "git",
     "url": "https://github.com/keyuhe/copilot-archiver"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/copilot-archiver.git"
   },
   "license": "MIT",
   "engines": {
@@ -65,7 +61,8 @@
             ".DS_Store",
             "*.pyc",
             "GitHub Copilot Chat.log",
-            ".snapshots"
+            ".snapshots",
+            "copilot_debug_messages"
           ],
           "description": "Patterns to exclude from snapshots"
         },
@@ -91,7 +88,7 @@
         },
         "copilotArchiver.jsonOutputDir": {
           "type": "string",
-          "default": "copilot_debug_messages",
+          "default": ".snapshots/copilot_debug_messages",
           "description": "Relative directory under workspace to write Copilot JSON outputs"
         }
       }

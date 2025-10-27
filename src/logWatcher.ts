@@ -93,14 +93,21 @@ export class LogWatcher {
             for (const line of newLines) {
                 if (line.includes('[debug] messages:') || line.includes('[debug] input:')) {
                     const debugType = line.includes('[debug] messages:') ? '[debug] messages:' : '[debug] input:';
-                    const parts = line.split(debugType, 1);
+                    const parts = line.split(debugType);
                     const ts = parts[0].trim();
-                    const raw = parts[1]?.trim() ?? '';
+                    const raw = parts.slice(1).join(debugType).trim();
                     // Extract a JSON array substring robustly (from first '[' to last ']')
                     const jsonStr = this.extractJsonArrayFromDebugLine(raw) ?? raw;
                     // Store progressively with normalized JSON array
                     this.jsonExporter.recordDebugLine(ts, jsonStr);
-                    console.log(`Recorded debug line: ${ts} ${jsonStr}`);
+
+                    // Log verbose details about the detected line and JSON
+                    log(`Detected ${debugType} line at ${ts}`);
+                    const lineShort = line.length > 150 ? line.slice(0, 150) + '...' : line;
+                    const jsonShort = jsonStr.length > 150 ? jsonStr.slice(0, 150) + '...' : jsonStr;
+                    log(`Line: ${lineShort}`);
+                    log(`Extracted JSON: ${jsonShort}`);
+
                     // Parse messages JSON once for snapshot metadata
                     let parsedMessages: any[] | undefined = undefined;
                     try {

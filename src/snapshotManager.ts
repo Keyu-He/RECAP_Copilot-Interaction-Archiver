@@ -50,7 +50,7 @@ export class SnapshotManager {
         const actualTurnIndex = turnIndex ?? await this.getNextTurnIndex(workspacePath, workspaceName);
 
         // Create snapshot directory
-        const snapshotDir = path.join(workspacePath, this.outputPath, `turn_${actualTurnIndex}`);
+        const snapshotDir = path.join(workspacePath, this.outputPath, `${actualTurnIndex}`);
 
         if (fs.existsSync(snapshotDir)) {
             console.log(`Snapshot directory already exists: ${snapshotDir}, skipping...`);
@@ -130,12 +130,11 @@ export class SnapshotManager {
 
         const entries = fs.readdirSync(snapshotsDir, { withFileTypes: true });
         const turnDirs = entries
-            .filter(entry => entry.isDirectory() && entry.name.startsWith('turn_'))
+            .filter(entry => entry.isDirectory() && /^\d+$/.test(entry.name))
             .map(entry => {
-                const match = entry.name.match(/^turn_(\d+)$/);
-                return match ? parseInt(match[1], 10) : -1;
+                return parseInt(entry.name, 10);
             })
-            .filter(index => index >= 0);
+            .filter(index => !isNaN(index) && index >= 0);
 
         return turnDirs.length > 0 ? Math.max(...turnDirs) + 1 : 0;
     }
