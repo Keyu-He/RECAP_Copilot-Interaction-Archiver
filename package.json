@@ -1,0 +1,114 @@
+{
+  "name": "copilot-archiver",
+  "displayName": "Copilot Interaction Archiver",
+  "description": "Automatically archive your workspace at the end of each Copilot turn",
+  "version": "0.2.1",
+  "publisher": "keyuhe",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/keyuhe/copilot-archiver"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/copilot-archiver.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilotArchiver.enable",
+        "title": "Copilot Archiver: Enable"
+      },
+      {
+        "command": "copilotArchiver.disable",
+        "title": "Copilot Archiver: Disable"
+      },
+      {
+        "command": "copilotArchiver.captureNow",
+        "title": "Copilot Archiver: Capture Now"
+      }
+    ],
+    "configuration": {
+      "title": "Copilot Interaction Archiver",
+      "properties": {
+        "copilotArchiver.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic snapshot capture"
+        },
+        "copilotArchiver.outputPath": {
+          "type": "string",
+          "default": ".snapshots",
+          "description": "Relative path where snapshots will be stored"
+        },
+        "copilotArchiver.quietPeriodMs": {
+          "type": "number",
+          "default": 7000,
+          "description": "Time in milliseconds to wait after last log update before considering turn complete"
+        },
+        "copilotArchiver.excludePatterns": {
+          "type": "array",
+          "default": [
+            ".git",
+            "node_modules",
+            "__pycache__",
+            ".DS_Store",
+            "*.pyc",
+            "GitHub Copilot Chat.log",
+            ".snapshots"
+          ],
+          "description": "Patterns to exclude from snapshots"
+        },
+        "copilotArchiver.logFileName": {
+          "type": "string",
+          "default": "GitHub Copilot Chat.log",
+          "description": "Name of the Copilot chat log file to monitor"
+        },
+        "copilotArchiver.logFilePatterns": {
+          "type": "array",
+          "default": [
+            "GitHub Copilot Chat.log",
+            "GitHub Copilot*.log",
+            "GitHub Copilot Chat*.log",
+            "Copilot*.log"
+          ],
+          "description": "Glob patterns of Copilot log files to monitor (searched under VS Code logs directory)"
+        },
+        "copilotArchiver.jsonOutputEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Write Copilot debug JSON files alongside snapshots"
+        },
+        "copilotArchiver.jsonOutputDir": {
+          "type": "string",
+          "default": "copilot_debug_messages",
+          "description": "Relative directory under workspace to write Copilot JSON outputs"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3"
+  }
+}
