@@ -45,6 +45,7 @@ export class JsonExporter {
     private jsonOutputDir: string;
     private snapshotsOutputPath: string;
     private incrementalMappingPath: string | null = null;
+    private completeHistoryPath: string | null = null;
 
     constructor(workspacePath: string) {
         this.workspacePath = workspacePath;
@@ -159,7 +160,8 @@ export class JsonExporter {
                         timestamp: timestamp,
                         user_request: userRequestClean,
                         assistant_responses: assistantResponses,
-                        code_snapshot: null
+                        code_snapshot_first: null,
+                        code_snapshot_last: null
                     };
                     if (multimodalItems.length > 0) {
                         turnObj['prompt_content'] = multimodalItems;
@@ -208,23 +210,36 @@ export class JsonExporter {
             }
         }
 
-        // For each turn, find the latest snapshot that includes that turn
+        // For each turn, find the first and last snapshot that includes that turn
         for (let turnIndex = 0; turnIndex < compactTurns.length; turnIndex++) {
             // Find all snapshots with turn_count = turnIndex + 1
             const candidateSnapshots = snapshots.filter(s => s.turnCount === turnIndex + 1);
 
             if (candidateSnapshots.length > 0) {
-                // Pick the snapshot with the highest snapshotIndex
-                const bestSnapshot = candidateSnapshots.reduce((prev, curr) =>
+                // Pick the snapshot with the lowest snapshotIndex (first/baseline)
+                const firstSnapshot = candidateSnapshots.reduce((prev, curr) =>
+                    curr.snapshotIndex < prev.snapshotIndex ? curr : prev
+                );
+
+                // Pick the snapshot with the highest snapshotIndex (last/final)
+                const lastSnapshot = candidateSnapshots.reduce((prev, curr) =>
                     curr.snapshotIndex > prev.snapshotIndex ? curr : prev
                 );
 
-                const relPath = path.relative(path.dirname(workspacePath), bestSnapshot.snapshotDir);
-                compactTurns[turnIndex]['code_snapshot'] = {
-                    path: relPath,
-                    timestamp: bestSnapshot.metadata.timestamp,
-                    files_count: bestSnapshot.metadata.files_count,
-                    total_size_bytes: bestSnapshot.metadata.total_size_bytes
+                const firstRelPath = path.relative(path.dirname(workspacePath), firstSnapshot.snapshotDir);
+                compactTurns[turnIndex]['code_snapshot_first'] = {
+                    path: firstRelPath,
+                    timestamp: firstSnapshot.metadata.timestamp,
+                    files_count: firstSnapshot.metadata.files_count,
+                    total_size_bytes: firstSnapshot.metadata.total_size_bytes
+                };
+
+                const lastRelPath = path.relative(path.dirname(workspacePath), lastSnapshot.snapshotDir);
+                compactTurns[turnIndex]['code_snapshot_last'] = {
+                    path: lastRelPath,
+                    timestamp: lastSnapshot.metadata.timestamp,
+                    files_count: lastSnapshot.metadata.files_count,
+                    total_size_bytes: lastSnapshot.metadata.total_size_bytes
                 };
             }
         }
@@ -278,7 +293,86 @@ export class JsonExporter {
         const compactPath = path.join(outputDir, `${sessionId}-compact.json`);
         fs.writeFileSync(compactPath, JSON.stringify(compactOutput, null, 2), 'utf-8');
 
+        // Complete history version (preserves rolled-back turns)
+        this.writeCompleteHistory(outputDir, sessionId, compactTurns);
+
         console.log(`Wrote Copilot JSON: ${path.relative(workspacePath, fullPath)}, ${path.relative(workspacePath, compactPath)}`);
+    }
+
+    private writeCompleteHistory(outputDir: string, sessionId: string, currentTurns: any[]) {
+        const historyPath = path.join(outputDir, `${sessionId}-complete-history.json`);
+
+        // Read existing complete history
+        let completeHistory: any = {
+            session_id: sessionId,
+            workspace_path: this.workspacePath,
+            last_updated: new Date().toISOString(),
+            all_turns: []
+        };
+
+        if (fs.existsSync(historyPath)) {
+            try {
+                const existing = JSON.parse(fs.readFileSync(historyPath, 'utf-8'));
+                completeHistory.all_turns = existing.all_turns || [];
+            } catch (e) {
+                console.warn(`Failed to read existing complete history: ${e}`);
+            }
+        }
+
+        // Create a map of current turns by their unique signature
+        const currentTurnSignatures = new Set<string>();
+        for (const turn of currentTurns) {
+            const signature = this.getTurnSignature(turn);
+            currentTurnSignatures.add(signature);
+        }
+
+        // Mark existing turns as deleted if they no longer exist in current turns
+        const existingSignatures = new Set<string>();
+        for (const historicalTurn of completeHistory.all_turns) {
+            const signature = this.getTurnSignature(historicalTurn);
+            existingSignatures.add(signature);
+
+            if (!currentTurnSignatures.has(signature)) {
+                // Turn was rolled back/deleted
+                historicalTurn.deleted = true;
+                historicalTurn.deleted_at = new Date().toISOString();
+            } else {
+                // Turn still exists, update it
+                const currentTurn = currentTurns.find(t => this.getTurnSignature(t) === signature);
+                if (currentTurn) {
+                    // Update with latest information
+                    Object.assign(historicalTurn, currentTurn);
+                    historicalTurn.deleted = false;
+                }
+            }
+        }
+
+        // Add new turns that don't exist in history
+        for (const turn of currentTurns) {
+            const signature = this.getTurnSignature(turn);
+            if (!existingSignatures.has(signature)) {
+                // New turn
+                const newTurn = { ...turn, deleted: false, first_seen: new Date().toISOString() };
+                completeHistory.all_turns.push(newTurn);
+            }
+        }
+
+        // Update metadata
+        completeHistory.last_updated = new Date().toISOString();
+        completeHistory.total_turns = completeHistory.all_turns.length;
+        completeHistory.active_turns = completeHistory.all_turns.filter((t: any) => !t.deleted).length;
+        completeHistory.deleted_turns = completeHistory.all_turns.filter((t: any) => t.deleted).length;
+
+        // Write complete history
+        fs.writeFileSync(historyPath, JSON.stringify(completeHistory, null, 2), 'utf-8');
+    }
+
+    private getTurnSignature(turn: any): string {
+        // Create a unique signature for a turn based on timestamp and user request
+        // This helps identify the same turn across different versions
+        const timestamp = turn.timestamp || '';
+        const userRequest = turn.user_request || '';
+        return `${timestamp}:${userRequest.substring(0, 100)}`;
     }
 }
 
