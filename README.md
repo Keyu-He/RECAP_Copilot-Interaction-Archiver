@@ -1,59 +1,46 @@
 # Copilot Interaction Archiver
 
-Automatically archives your workspace at the end of each GitHub Copilot conversation turn.
+Automatically archive your workspace at the end of each Copilot turn.
 
-## Installation
+## Features
 
-### From Source
-
-1. Clone this repository
-2. Run `npm install` in the extension directory
-3. Run `npm run compile`
-4. In VS Code, press F5 to launch Extension Development Host
-5. Or package with `vsce package` and install the .vsix file
-
-### Quick Start
-
-1. Open a workspace where you use GitHub Copilot
-2. Enable debug logging for Copilot (creates `GitHub Copilot Chat.log`)
-3. The extension will automatically start watching
-4. Snapshots will be saved to `./.snapshots/N/` after each conversation turn
-
-## Commands
-
-- `Copilot Archiver: Enable` - Enable automatic capture
-- `Copilot Archiver: Disable` - Disable automatic capture
-- `Copilot Archiver: Capture Now` - Manually capture a snapshot
+- **Automatic Snapshots**: Captures the state of your workspace after every Copilot interaction.
+- **Chat History**: Saves the conversation history associated with each snapshot.
+- **S3 Integration**: (Optional) Zips and uploads snapshots to Amazon S3.
+- **Smart Tracking**: Uses a unique Chat ID (Session ID) to organize snapshots.
 
 ## Configuration
 
-- `copilotArchiver.enabled`: Enable/disable automatic capture (default: true)
-- `copilotArchiver.outputPath`: Where to store archives (default: ".snapshots")
-- `copilotArchiver.excludePatterns`: Files/folders to skip (default: [".git", "node_modules", ...])
-- `copilotArchiver.logFileName`: Default Copilot chat log file name (default: "GitHub Copilot Chat.log")
-- `copilotArchiver.logFilePatterns`: Glob patterns for Copilot logs (searched under VS Code logs directory)
-- `copilotArchiver.jsonOutputEnabled`: Also emit Copilot JSON files (full and compact) like store_copilot_json.py
-- `copilotArchiver.jsonOutputDir`: Directory for JSON outputs (default: `copilot_debug_messages` under workspace)
+### S3 Storage (Optional)
 
-## How It Works
+To enable S3 uploads, configure the following settings in your `settings.json`:
 
-1. **File Watching**: Monitors the Copilot Chat log file under the VS Code logs directory
-2. **Completion Detection**: Watches for `[debug] messages:`/`[debug] input:` lines indicating agent responses/completions.
-3. **Snapshot Trigger**: When completion detected, immediately captures workspace snapshot
-4. **Snapshot Capture**: Copies workspace to `.snapshots/N/`
-5. **Metadata**: Creates `_snapshot_metadata.json` with timestamp and turn info
+```json
+"copilotArchiver.s3.enabled": true,
+"copilotArchiver.s3.bucket": "your-bucket-name",
+"copilotArchiver.s3.region": "us-east-1",
+"copilotArchiver.s3.accessKeyId": "YOUR_ACCESS_KEY",
+"copilotArchiver.s3.secretAccessKey": "YOUR_SECRET_KEY",
+"copilotArchiver.s3.folderPrefix": "copilot-snapshots"
+```
 
-## Requirements
+> [!WARNING]
+> **Security Notice**: Currently, AWS credentials are stored in plain text in VS Code settings.
+> - **Do not commit** your `.vscode/settings.json` if it contains real credentials.
+> - **Future Plan**: We plan to move credential storage to VS Code's secure `SecretStorage` API in a future update.
 
-- VS Code 1.80.0 or higher
-- GitHub Copilot extension installed
-- Debug logging enabled for Copilot
+## Usage
 
-## Known Limitations
+The extension runs automatically when you open a workspace. It monitors the Copilot Chat log and triggers a snapshot whenever a turn is completed.
 
-- Requires debug log file to be present
-- Large workspaces will take time to copy
+## Output Structure
 
-## License
+Snapshots are stored in `.snapshots/`:
 
-MIT
+```
+.snapshots/
+  <chat_id>/
+    <turn_index>/
+      _snapshot_metadata.json
+      <workspace_files>...
+```
