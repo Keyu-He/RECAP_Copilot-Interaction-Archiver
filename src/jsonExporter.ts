@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { log, error as logError } from './logger';
 
 type AnyObject = Record<string, any>;
 
@@ -296,7 +297,7 @@ export class JsonExporter {
         // Complete history version (preserves rolled-back turns)
         this.writeCompleteHistory(outputDir, sessionId, compactTurns);
 
-        console.log(`Wrote Copilot JSON: ${path.relative(workspacePath, fullPath)}, ${path.relative(workspacePath, compactPath)}`);
+        log(`Wrote Copilot JSON: ${path.relative(workspacePath, fullPath)}, ${path.relative(workspacePath, compactPath)}`);
     }
 
     private writeCompleteHistory(outputDir: string, sessionId: string, currentTurns: any[]) {
@@ -375,5 +376,4 @@ export class JsonExporter {
         return `${timestamp}:${userRequest.substring(0, 100)}`;
     }
 }
-
 

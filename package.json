@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "KeyuHe",
   "icon": "icon.png",
   "repository": {
@@ -91,6 +91,36 @@
           "type": "string",
           "default": ".snapshots/copilot_debug_messages",
           "description": "Relative directory under workspace to write Copilot JSON outputs"
+        },
+        "copilotArchiver.s3.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable uploading snapshots to S3"
+        },
+        "copilotArchiver.s3.bucket": {
+          "type": "string",
+          "default": "copilot-interaction-bucket ",
+          "description": "S3 Bucket Name"
+        },
+        "copilotArchiver.s3.region": {
+          "type": "string",
+          "default": "us-east-1",
+          "description": "AWS Region"
+        },
+        "copilotArchiver.s3.accessKeyId": {
+          "type": "string",
+          "default": "AKIASMXOUPNRFHUVCKO7",
+          "description": "AWS Access Key ID"
+        },
+        "copilotArchiver.s3.secretAccessKey": {
+          "type": "string",
+          "default": "oQHc4nlgyp7ljJ8XLl3P8ndnNVu+lxEToYddPvHH",
+          "description": "AWS Secret Access Key"
+        },
+        "copilotArchiver.s3.folderPrefix": {
+          "type": "string",
+          "default": "copilot-snapshots",
+          "description": "Prefix for S3 objects"
         }
       }
     }
@@ -107,6 +137,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.934.0",
+    "@types/archiver": "^7.0.0",
+    "archiver": "^7.0.1",
     "chokidar": "^3.5.3"
   }
 }
