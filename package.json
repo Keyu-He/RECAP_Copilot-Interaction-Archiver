@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "publisher": "KeyuHe",
   "icon": "icon.png",
   "repository": {
@@ -48,11 +48,6 @@
           "default": ".snapshots",
           "description": "Relative path where snapshots will be stored"
         },
-        "copilotArchiver.quietPeriodMs": {
-          "type": "number",
-          "default": 7000,
-          "description": "Time in milliseconds to wait after last log update before considering turn complete"
-        },
         "copilotArchiver.excludePatterns": {
           "type": "array",
           "default": [
@@ -66,21 +61,6 @@
             "copilot_debug_messages"
           ],
           "description": "Patterns to exclude from snapshots"
-        },
-        "copilotArchiver.logFileName": {
-          "type": "string",
-          "default": "GitHub Copilot Chat.log",
-          "description": "Name of the Copilot chat log file to monitor"
-        },
-        "copilotArchiver.logFilePatterns": {
-          "type": "array",
-          "default": [
-            "GitHub Copilot Chat.log",
-            "GitHub Copilot*.log",
-            "GitHub Copilot Chat*.log",
-            "Copilot*.log"
-          ],
-          "description": "Glob patterns of Copilot log files to monitor (searched under VS Code logs directory)"
         },
         "copilotArchiver.jsonOutputEnabled": {
           "type": "boolean",
@@ -99,7 +79,7 @@
         },
         "copilotArchiver.s3.bucket": {
           "type": "string",
-          "default": "copilot-interaction-bucket ",
+          "default": "copilot-interaction-bucket",
           "description": "S3 Bucket Name"
         },
         "copilotArchiver.s3.region": {
@@ -109,18 +89,18 @@
         },
         "copilotArchiver.s3.accessKeyId": {
           "type": "string",
-          "default": "REDACTED_KEY_2",
+          "default": "",
           "description": "AWS Access Key ID"
         },
         "copilotArchiver.s3.secretAccessKey": {
           "type": "string",
-          "default": "oQHc4nlgyp7ljJ8XLl3P8ndnNVu+lxEToYddPvHH",
+          "default": "",
           "description": "AWS Secret Access Key"
         },
         "copilotArchiver.s3.folderPrefix": {
           "type": "string",
           "default": "copilot-snapshots",
-          "description": "Prefix for S3 objects"
+          "description": "Folder prefix (directory) inside the bucket. Snapshots will be stored under <prefix>/<chat_id>/..."
         }
       }
     }
@@ -132,9 +112,9 @@
     "pretest": "npm run compile"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0",
     "@types/vscode": "^1.80.0",
-    "typescript": "^5.0.0"
+    "@types/node": "^18.0.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.934.0",

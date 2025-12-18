@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import archiver = require('archiver');
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { log, error as logError } from './logger';
+import { Logger } from './logger';
 
 interface SnapshotMetadata {
     turn_index: number;
@@ -24,14 +24,11 @@ interface SnapshotMetadata {
 export class SnapshotManager {
     private excludePatterns: string[];
     private outputPath: string;
-    private chatId: string;
     private s3Client: S3Client | undefined;
     private s3Bucket: string | undefined;
     private s3FolderPrefix: string | undefined;
-    private isProcessing: boolean = false;
 
-    constructor(chatId: string) {
-        this.chatId = chatId;
+    constructor() {
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         this.excludePatterns = config.get<string[]>('excludePatterns', [
             '.git',
@@ -49,7 +46,7 @@ export class SnapshotManager {
             const region = config.get<string>('s3.region', 'us-east-1');
             const accessKeyId = config.get<string>('s3.accessKeyId', '');
             const secretAccessKey = config.get<string>('s3.secretAccessKey', '');
-            this.s3Bucket = config.get<string>('s3.bucket', '');
+            this.s3Bucket = config.get<string>('s3.bucket', '').trim();
             this.s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
 
             if (accessKeyId && secretAccessKey && this.s3Bucket) {
@@ -60,9 +57,17 @@ export class SnapshotManager {
                         secretAccessKey
                     }
                 });
-                log('S3 Client initialized');
+                Logger.info('S3 Client initialized');
             } else {
-                logError('S3 enabled but missing credentials or bucket name');
+                Logger.error('S3 enabled but missing credentials or bucket name');
+                vscode.window.showWarningMessage(
+                    'Copilot Archiver: S3 upload is enabled but credentials are missing. Please configure them in settings.',
+                    'Open Settings'
+                ).then(selection => {
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('workbench.action.openSettings', 'copilotArchiver.s3');
+                    }
+                });
             }
         }
     }
@@ -73,27 +78,19 @@ export class SnapshotManager {
 
     async captureSnapshot(
         workspacePath: string,
-        turnIndex?: number,
-        debugTimestamp?: string,
+        chatId: string,
+        turnIndex: number,
+        debugTimestamp: string,
         debugMessages?: any[],
-        debugTurnCount?: number
+        debugTurnCount?: number,
+        phase?: 'input' | 'output',
+        chatSessionPath?: string
     ): Promise<void> {
-        if (this.isProcessing) {
-            log('Snapshot already in progress, skipping...');
-            return;
-        }
-
-        this.isProcessing = true;
-
         try {
             const workspaceName = path.basename(workspacePath);
 
-            // Determine turn index
-            const actualTurnIndex = turnIndex ?? await this.getNextTurnIndex(workspacePath);
-
             // Create snapshot directory: .snapshots/<chat_id>/<turn_index>
-            const snapshotDir = path.join(workspacePath, this.outputPath, this.chatId, `${actualTurnIndex}`);
-
+            const snapshotDir = path.join(workspacePath, this.outputPath, chatId, `${turnIndex}${phase ? `_${phase}` : ''}`);
             // Create snapshot directory
             if (!fs.existsSync(snapshotDir)) {
                 fs.mkdirSync(snapshotDir, { recursive: true });
@@ -101,14 +98,20 @@ export class SnapshotManager {
 
             // Copy workspace files
             const stats = await this.copyFiles(workspacePath, snapshotDir, workspacePath);
-            log(`Snapshot created at ${snapshotDir}`);
+            Logger.info(`Snapshot created at ${snapshotDir}`);
+
+            // Copy Chat Session JSON if provided
+            if (chatSessionPath && fs.existsSync(chatSessionPath)) {
+                const destSessionPath = path.join(snapshotDir, path.basename(chatSessionPath));
+                fs.copyFileSync(chatSessionPath, destSessionPath);
+            }
 
             // Create metadata file
             const metadata: SnapshotMetadata = {
-                turn_index: actualTurnIndex,
-                timestamp: debugTimestamp ?? new Date().toISOString(),
+                turn_index: turnIndex,
+                timestamp: debugTimestamp,
                 workspace_path: workspacePath,
-                chat_id: this.chatId,
+                chat_id: chatId,
                 repo_path: workspacePath,
                 files_count: stats.filesCount,
                 total_size_bytes: stats.totalSize,
@@ -122,32 +125,75 @@ export class SnapshotManager {
             // Zip and Upload to S3
             if (this.s3Client && this.s3Bucket) {
                 try {
-                    const zipPath = await this.zipSnapshot(snapshotDir, actualTurnIndex);
-                    await this.uploadToS3(zipPath, `${this.s3FolderPrefix}/${this.chatId}/${actualTurnIndex}.zip`);
+                    const zipPath = await this.zipSnapshot(snapshotDir, turnIndex, phase);
+                    await this.uploadToS3(zipPath, `${this.s3FolderPrefix}/${chatId}/${turnIndex}${phase ? `_${phase}` : ''}.zip`);
                     // Optional: Clean up zip file after upload? Keeping it for now as local backup.
                     // fs.unlinkSync(zipPath); 
                 } catch (err) {
-                    logError(`Failed to zip/upload snapshot: ${err}`);
+                    Logger.error(`Failed to zip/upload snapshot: ${err}`);
                 }
             }
         } catch (err) {
-            logError(`Failed to capture snapshot: ${err}`);
-        } finally {
-            this.isProcessing = false;
+            Logger.error(`Failed to capture snapshot: ${err}`);
         }
     }
 
-    private async zipSnapshot(sourceDir: string, turnIndex: number): Promise<string> {
+
+    async captureTempSnapshot(phase?: 'input' | 'output'): Promise<void> {
+        try {
+            const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+            if (!workspacePath) return;
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const tempDirName = phase ? `${timestamp}_${phase}` : timestamp;
+            const tempDir = path.join(workspacePath, this.outputPath, '_temp', tempDirName);
+
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+            }
+
+            const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+
+            for (const file of files) {
+                const relativePath = vscode.workspace.asRelativePath(file);
+                if (relativePath.startsWith('.snapshots') || relativePath.startsWith('.git') || relativePath.includes('node_modules')) {
+                    continue;
+                }
+
+                const sourcePath = file.fsPath;
+                const destPath = path.join(tempDir, relativePath);
+
+                const destFileDir = path.dirname(destPath);
+                if (!fs.existsSync(destFileDir)) {
+                    fs.mkdirSync(destFileDir, { recursive: true });
+                }
+
+                fs.copyFileSync(sourcePath, destPath);
+            }
+
+            const meta = {
+                timestamp: new Date().toISOString(),
+                phase: phase,
+                ready: true
+            };
+            fs.writeFileSync(path.join(tempDir, '_meta.json'), JSON.stringify(meta, null, 2));
+
+        } catch (err) {
+            Logger.error(`Error capturing temp snapshot: ${err}`);
+        }
+    }
+
+    private async zipSnapshot(sourceDir: string, turnIndex: number, phase?: string): Promise<string> {
         return new Promise((resolve, reject) => {
-            const zipPath = path.join(path.dirname(sourceDir), `${turnIndex}.zip`);
+            const zipPath = path.join(path.dirname(sourceDir), `${turnIndex}${phase ? `_${phase}` : ''}.zip`);
             const output = fs.createWriteStream(zipPath);
             const archive = archiver('zip', {
                 zlib: { level: 9 } // Sets the compression level.
             });
 
             output.on('close', () => {
-                log(`${archive.pointer()} total bytes`);
-                log('archiver has been finalized and the output file descriptor has closed.');
+                Logger.info(`${archive.pointer()} total bytes`);
+                Logger.info('archiver has been finalized and the output file descriptor has closed.');
                 resolve(zipPath);
             });
 
@@ -159,6 +205,56 @@ export class SnapshotManager {
             archive.directory(sourceDir, false);
             archive.finalize();
         });
+    }
+
+    async uploadFile(filePath: string, s3Key: string): Promise<void> {
+        return this.uploadToS3(filePath, s3Key);
+    }
+
+    async uploadDirectory(dirPath: string, s3Prefix: string): Promise<void> {
+        if (!this.s3Client || !this.s3Bucket) return;
+
+        const files: string[] = [];
+
+        const walk = (dir: string) => {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    if (!entry.name.startsWith('.')) { // basic skip
+                        walk(fullPath);
+                    }
+                } else {
+                    files.push(fullPath);
+                }
+            }
+        };
+
+        try {
+            walk(dirPath);
+            Logger.info(`Uploading ${files.length} files from ${dirPath} to S3...`);
+
+            // Use a simple concurrency limit
+            const CONCURRENCY = 50;
+            for (let i = 0; i < files.length; i += CONCURRENCY) {
+                const chunk = files.slice(i, i + CONCURRENCY);
+                await Promise.all(chunk.map(file => {
+                    const relativePath = path.relative(dirPath, file);
+                    // Use forward slashes for S3 keys regardless of OS
+                    const s3Key = path.join(s3Prefix, relativePath).replace(/\\/g, '/');
+
+                    // Respect exclude patterns
+                    if (this.shouldExclude(file, dirPath)) {
+                        return Promise.resolve();
+                    }
+
+                    return this.uploadToS3(file, s3Key);
+                }));
+            }
+            Logger.info(`Upload complete for ${dirPath}`);
+        } catch (err) {
+            Logger.error(`Error uploading directory ${dirPath}: ${err}`);
+        }
     }
 
     private async uploadToS3(filePath: string, key: string): Promise<void> {
@@ -173,65 +269,13 @@ export class SnapshotManager {
 
         try {
             await this.s3Client.send(command);
-            log(`Successfully uploaded ${key} to S3`);
+            // Logger.info(`Uploaded ${key}`); // Too verbose for individual files
         } catch (err) {
-            logError(`Error uploading to S3: ${err}`);
+            Logger.error(`Error uploading to S3: ${err}`);
+            // Don't throw, just log to allow other files to proceed? 
+            // Or maybe throw to indicate failure.
             throw err;
         }
-    }
-
-    private countTurnsFromMessages(messages: any[]): number {
-        let turns = 0;
-        for (const msg of messages) {
-            if (msg && msg.role === 'user') {
-                const contentText = this.extractContentText(msg.content);
-                if (contentText.includes('<userRequest>')) {
-                    turns += 1;
-                }
-            }
-        }
-        return turns;
-    }
-
-    private extractContentText(content: any): string {
-        if (typeof content === 'string') {
-            return content;
-        }
-        if (Array.isArray(content) && content.length > 0) {
-            const parts: string[] = [];
-            for (const item of content) {
-                if (item && typeof item === 'object') {
-                    if (item.type === 'input_text' && typeof item.text === 'string') {
-                        parts.push(item.text);
-                    } else if (item.type === 'output_text' && typeof item.text === 'string') {
-                        parts.push(item.text);
-                    } else if (typeof item.text === 'string' && item.type !== 'input_text' && item.type !== 'output_text' && item.type !== 'input_image' && item.type !== 'output_image') {
-                        parts.push(item.text);
-                    }
-                }
-            }
-            return parts.join('\n');
-        }
-        return content ? String(content) : '';
-    }
-
-    private async getNextTurnIndex(workspacePath: string): Promise<number> {
-        // Check .snapshots/<chat_id>/
-        const chatSnapshotsDir = path.join(workspacePath, this.outputPath, this.chatId);
-
-        if (!fs.existsSync(chatSnapshotsDir)) {
-            return 0;
-        }
-
-        const entries = fs.readdirSync(chatSnapshotsDir, { withFileTypes: true });
-        const turnDirs = entries
-            .filter(entry => entry.isDirectory() && /^\d+$/.test(entry.name))
-            .map(entry => {
-                return parseInt(entry.name, 10);
-            })
-            .filter(index => !isNaN(index) && index >= 0);
-
-        return turnDirs.length > 0 ? Math.max(...turnDirs) + 1 : 0;
     }
 
     private async copyFiles(

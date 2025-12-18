@@ -1,0 +1,7 @@
+{
+    "copilotArchiver.s3.enabled": true,
+    "copilotArchiver.s3.bucket": "copilot-interaction-bucket",
+    "copilotArchiver.s3.region": "us-east-1",
+    "copilotArchiver.s3.accessKeyId": "REDACTED_KEY_1",
+    "copilotArchiver.s3.secretAccessKey": "REDACTED_SECRET"
+}

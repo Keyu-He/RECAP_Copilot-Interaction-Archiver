@@ -1,34 +1,24 @@
 import * as vscode from 'vscode';
 import { SnapshotManager } from './snapshotManager';
 import { ChatSessionWatcher } from './chatSessionWatcher';
-
-let outputChannel: vscode.OutputChannel;
-
-export function log(message: string) {
-    const timestamp = new Date().toISOString();
-    outputChannel.appendLine(`[${timestamp}] ${message}`);
-}
-
-export function logError(message: string) {
-    const timestamp = new Date().toISOString();
-    outputChannel.appendLine(`[${timestamp}] ERROR: ${message}`);
-}
+import { Logger } from './logger';
+import { PasteWatcher } from './pasteWatcher';
+import { LogWatcher } from './logWatcher';
 
 export function activate(context: vscode.ExtensionContext) {
-    outputChannel = vscode.window.createOutputChannel('Copilot Archiver');
-    log('Copilot Interaction Archiver is now active');
+    Logger.initialize(context, 'Copilot Archiver');
+    Logger.info('Copilot Interaction Archiver is now active');
 
-    // Generate or retrieve a unique chat ID for this session
-    // vscode.env.sessionId is unique per window and persists across reloads
-    const chatId = vscode.env.sessionId;
-    log(`VS Code session ID: ${chatId}`);
-
-    const snapshotManager = new SnapshotManager(chatId);
+    const snapshotManager = new SnapshotManager();
     const chatSessionWatcher = new ChatSessionWatcher(context, snapshotManager);
+    const pasteWatcher = new PasteWatcher(context, snapshotManager);
+    const logWatcher = new LogWatcher(context, snapshotManager);
 
     context.subscriptions.push(chatSessionWatcher);
+    context.subscriptions.push(pasteWatcher);
+    context.subscriptions.push(logWatcher);
 
-    log('ChatSessionWatcher initialized and listening for changes.');
+    Logger.info('ChatSessionWatcher initialized and listening for changes.');
 }
 
 export function deactivate() { }
