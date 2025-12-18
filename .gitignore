@@ -44,3 +44,6 @@ lerna-debug.log*
 *.tmp
 .cache/
 bug_list.txt
+
+download_s3.js
+downloaded_snapshots

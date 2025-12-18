@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { log, error as logError } from './logger';
+import { Logger } from './logger';
 
 type AnyObject = Record<string, any>;
 
@@ -102,7 +102,7 @@ export class JsonExporter {
         if (!this.jsonOutputEnabled) return;
         if (this.incrementalMappingPath) return;
         const dir = path.join(this.workspacePath, this.jsonOutputDir);
-        try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+        try { fs.mkdirSync(dir, { recursive: true }); } catch { }
         this.incrementalMappingPath = path.join(dir, `${this.sessionId}-incremental.jsonl`);
     }
 
@@ -268,7 +268,7 @@ export class JsonExporter {
         const outputDir = path.join(workspacePath, this.jsonOutputDir);
         try {
             fs.mkdirSync(outputDir, { recursive: true });
-        } catch {}
+        } catch { }
 
         // Full version
         const fullOutput = {
@@ -297,7 +297,7 @@ export class JsonExporter {
         // Complete history version (preserves rolled-back turns)
         this.writeCompleteHistory(outputDir, sessionId, compactTurns);
 
-        log(`Wrote Copilot JSON: ${path.relative(workspacePath, fullPath)}, ${path.relative(workspacePath, compactPath)}`);
+        Logger.info(`Wrote Copilot JSON: ${path.relative(workspacePath, fullPath)}, ${path.relative(workspacePath, compactPath)}`);
     }
 
     private writeCompleteHistory(outputDir: string, sessionId: string, currentTurns: any[]) {
