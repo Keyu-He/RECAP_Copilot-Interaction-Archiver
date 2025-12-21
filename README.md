@@ -87,21 +87,22 @@ your-workspace/
 
 ## Configuration
 
-### S3 Storage (Optional)
+### S3 Synchronization
 
-To enable S3 uploads, configure the following settings in your **User Settings (`settings.json`)** to apply globally, or Workspace Settings (`.vscode/settings.json`) for a single project:
+This extension supports secure uploading of snapshots to a centralized S3 bucket.
 
-```json
-"copilotArchiver.s3.enabled": true,
-"copilotArchiver.s3.bucket": "your-bucket-name",
-"copilotArchiver.s3.region": "us-east-1",
-"copilotArchiver.s3.accessKeyId": "YOUR_ACCESS_KEY",
-"copilotArchiver.s3.secretAccessKey": "YOUR_SECRET_KEY",
-"copilotArchiver.s3.folderPrefix": "copilot-snapshots"
-```
+#### For Users
+You only need to configure the connection to the archive server.
+1.  Obtain the **Backend URL** from your administrator.
+2.  Open your **User Settings (JSON)** (`Cmd+Shift+P` > "Open User Settings (JSON)").
+3.  Add the following:
+    ```json
+    "copilotArchiver.s3.enabled": true,
+    "copilotArchiver.backendUrl": "http://<ADMINISTRATOR_PROVIDED_IP>:3000"
+    ```
 
-> [!WARNING]
-> **Security Notice**: Avoid staring credentials in `.vscode/settings.json` if you commit it to Git. Use your User Settings (Cmd/Ctrl + ,) instead.
+#### For Administrators
+To set up the backend server (required for handling S3 uploads securely), please refer to the **[Server Deployment Guide](DEPLOY.md)**.
 
 ## Output Structure
 

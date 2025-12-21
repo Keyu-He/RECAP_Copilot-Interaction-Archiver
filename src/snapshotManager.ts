@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import archiver = require('archiver');
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+
 import { Logger } from './logger';
 
 interface SnapshotMetadata {
@@ -24,9 +23,6 @@ interface SnapshotMetadata {
 export class SnapshotManager {
     private excludePatterns: string[];
     private outputPath: string;
-    private s3Client: S3Client | undefined;
-    private s3Bucket: string | undefined;
-    private s3FolderPrefix: string | undefined;
 
     constructor() {
         const config = vscode.workspace.getConfiguration('copilotArchiver');
@@ -40,36 +36,6 @@ export class SnapshotManager {
             '.snapshots'
         ]);
         this.outputPath = config.get<string>('outputPath', '.snapshots');
-
-        // Initialize S3 if enabled
-        if (config.get<boolean>('s3.enabled', false)) {
-            const region = config.get<string>('s3.region', 'us-east-1');
-            const accessKeyId = config.get<string>('s3.accessKeyId', '');
-            const secretAccessKey = config.get<string>('s3.secretAccessKey', '');
-            this.s3Bucket = config.get<string>('s3.bucket', '').trim();
-            this.s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-
-            if (accessKeyId && secretAccessKey && this.s3Bucket) {
-                this.s3Client = new S3Client({
-                    region,
-                    credentials: {
-                        accessKeyId,
-                        secretAccessKey
-                    }
-                });
-                Logger.info('S3 Client initialized');
-            } else {
-                Logger.error('S3 enabled but missing credentials or bucket name');
-                vscode.window.showWarningMessage(
-                    'Copilot Archiver: S3 upload is enabled but credentials are missing. Please configure them in settings.',
-                    'Open Settings'
-                ).then(selection => {
-                    if (selection === 'Open Settings') {
-                        vscode.commands.executeCommand('workbench.action.openSettings', 'copilotArchiver.s3');
-                    }
-                });
-            }
-        }
     }
 
     getOutputPath(): string {
@@ -123,15 +89,13 @@ export class SnapshotManager {
             fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
 
             // Zip and Upload to S3
-            if (this.s3Client && this.s3Bucket) {
-                try {
-                    const zipPath = await this.zipSnapshot(snapshotDir, turnIndex, phase);
-                    await this.uploadToS3(zipPath, `${this.s3FolderPrefix}/${chatId}/${turnIndex}${phase ? `_${phase}` : ''}.zip`);
-                    // Optional: Clean up zip file after upload? Keeping it for now as local backup.
-                    // fs.unlinkSync(zipPath); 
-                } catch (err) {
-                    Logger.error(`Failed to zip/upload snapshot: ${err}`);
-                }
+            // Upload to S3 if enabled
+            const config = vscode.workspace.getConfiguration('copilotArchiver');
+            if (config.get<boolean>('s3.enabled', false)) {
+                const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
+                const s3KeyPrefix = `${s3FolderPrefix}/${chatId}/${turnIndex}${phase ? `_${phase}` : ''}`;
+                // Upload directory recursively
+                await this.uploadDirectory(snapshotDir, s3KeyPrefix);
             }
         } catch (err) {
             Logger.error(`Failed to capture snapshot: ${err}`);
@@ -183,36 +147,15 @@ export class SnapshotManager {
         }
     }
 
-    private async zipSnapshot(sourceDir: string, turnIndex: number, phase?: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const zipPath = path.join(path.dirname(sourceDir), `${turnIndex}${phase ? `_${phase}` : ''}.zip`);
-            const output = fs.createWriteStream(zipPath);
-            const archive = archiver('zip', {
-                zlib: { level: 9 } // Sets the compression level.
-            });
 
-            output.on('close', () => {
-                Logger.info(`${archive.pointer()} total bytes`);
-                Logger.info('archiver has been finalized and the output file descriptor has closed.');
-                resolve(zipPath);
-            });
-
-            archive.on('error', (err: any) => {
-                reject(err);
-            });
-
-            archive.pipe(output);
-            archive.directory(sourceDir, false);
-            archive.finalize();
-        });
-    }
 
     async uploadFile(filePath: string, s3Key: string): Promise<void> {
         return this.uploadToS3(filePath, s3Key);
     }
 
     async uploadDirectory(dirPath: string, s3Prefix: string): Promise<void> {
-        if (!this.s3Client || !this.s3Bucket) return;
+        const config = vscode.workspace.getConfiguration('copilotArchiver');
+        if (!config.get<boolean>('s3.enabled', false)) return;
 
         const files: string[] = [];
 
@@ -258,20 +201,40 @@ export class SnapshotManager {
     }
 
     private async uploadToS3(filePath: string, key: string): Promise<void> {
-        if (!this.s3Client || !this.s3Bucket) return;
+        const config = vscode.workspace.getConfiguration('copilotArchiver');
+        const backendUrl = config.get<string>('backendUrl', 'http://localhost:3000');
 
-        const fileContent = fs.readFileSync(filePath);
-        const command = new PutObjectCommand({
-            Bucket: this.s3Bucket,
-            Key: key,
-            Body: fileContent
-        });
+        if (!backendUrl) return;
 
         try {
-            await this.s3Client.send(command);
-            // Logger.info(`Uploaded ${key}`); // Too verbose for individual files
+            // 1. Get Presigned URL
+            const response = await fetch(`${backendUrl}/sign-upload`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json() as { uploadUrl: string };
+            const uploadUrl = data.uploadUrl;
+
+            // 2. Upload to S3
+            const fileContent = fs.readFileSync(filePath);
+            const uploadResponse = await fetch(uploadUrl, {
+                method: 'PUT',
+                body: fileContent
+            });
+
+            if (!uploadResponse.ok) {
+                throw new Error(`S3 Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
+            }
+
+            // Logger.info(`Uploaded ${key}`); 
         } catch (err) {
-            Logger.error(`Error uploading to S3: ${err}`);
+            Logger.error(`Error uploading to S3 via Backend: ${err}`);
             // Don't throw, just log to allow other files to proceed? 
             // Or maybe throw to indicate failure.
             throw err;
