@@ -24,7 +24,10 @@ export class SnapshotManager {
     private excludePatterns: string[];
     private outputPath: string;
 
-    constructor() {
+    private secretStorage: vscode.SecretStorage;
+
+    constructor(secretStorage: vscode.SecretStorage) {
+        this.secretStorage = secretStorage;
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         this.excludePatterns = config.get<string[]>('excludePatterns', [
             '.git',
@@ -207,10 +210,20 @@ export class SnapshotManager {
         if (!backendUrl) return;
 
         try {
+            // Get JWT Token
+            const token = await this.secretStorage.get('archiver.jwt');
+            if (!token) {
+                Logger.warn("Upload skipped: No Login Token found. Please run 'Copilot Archiver: Login'.");
+                return;
+            }
+
             // 1. Get Presigned URL
             const response = await fetch(`${backendUrl}/sign-upload`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({ key })
             });
 

@@ -2,8 +2,44 @@
 
 This guide walks you through setting up a free-tier EC2 instance to host your backend server.
 
+## 0. Prerequisites: AWS Setup
+
+### 1. Create an S3 Bucket
+1.  Go to **S3** > **Create bucket**.
+2.  **Bucket name**: `copilot-interaction-bucket-XXX` (Must be unique).
+3.  **Region**: `us-east-1` (or your preferred region).
+4.  **Block Public Access**: Keep **checked** (Blocked). Our server uses secure presigned URLs, so the bucket itself does NOT need to be public.
+5.  Click **Create bucket**.
+6.  *Enable CORS (Optional but Recommended)*:
+    -   Go to **Permissions** > **Cross-origin resource sharing (CORS)** > **Edit**.
+    -   Paste:
+        ```json
+        [
+            {
+                "AllowedHeaders": ["*"],
+                "AllowedMethods": ["PUT", "POST", "GET"],
+                "AllowedOrigins": ["*"],
+                "ExposeHeaders": []
+            }
+        ]
+        ```
+
+### 2. Create IAM User (for the Server)
+1.  Go to **IAM** > **Users** > **Create user**.
+2.  **User name**: `archiver-backend-user`.
+3.  **Permissions**:
+    -   Select **Attach policies directly**.
+    -   Search for `AmazonS3FullAccess` (Or create a custom policy restricted to your bucket).
+    -   Select it and click **Next** > **Create user**.
+4.  **Create Access Keys**:
+    -   Click the new user > **Security credentials** tab.
+    -   Scroll to **Access keys** > **Create access key**.
+    -   Select **Command Line Interface (CLI)** > Check confirmation > **Next**.
+    -   **Copy** the `Access Key ID` and `Secret Access Key`. (Save them safely, you won't see them again!).
+
+---
+
 ## 1. Launch EC2 Instance
-1.  Log in to AWS Console > **EC2** > **Launch Instance**.
 2.  **Name**: `Copilot-Archiver-Server`.
 3.  **OS**: Amazon Linux 2023 AMI (Free tier eligible).
 4.  **Instance Type**: `t2.micro` or `t3.micro` (Free tier eligible).
@@ -46,9 +82,9 @@ sudo dnf install git -y
 You can either clone your repo or copy the files.
 **Option A (Git Clone):**
 ```bash
-git clone https://github.com/keyuhe/copilot-archiver.git
+git clone git@github.com:Keyu-He/Copilot-Interaction-Archiver.git
 type "yes" (if prompted)
-cd copilot-archiver/server
+cd Copilot-Interaction-Archiver/server
 ```
 
 **Option B (SCP - simpler for testing):**

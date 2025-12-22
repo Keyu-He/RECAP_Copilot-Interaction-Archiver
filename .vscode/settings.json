@@ -1,7 +1,0 @@
-{
-    "copilotArchiver.s3.enabled": true,
-    "copilotArchiver.s3.bucket": "copilot-interaction-bucket",
-    "copilotArchiver.s3.region": "us-east-1",
-    "copilotArchiver.s3.accessKeyId": "AKIASMXOUPNRCD2Y5Y4U",
-    "copilotArchiver.s3.secretAccessKey": "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"
-}

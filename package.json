@@ -77,30 +77,10 @@
           "default": true,
           "description": "Enable uploading snapshots to S3"
         },
-        "copilotArchiver.s3.bucket": {
-          "type": "string",
-          "default": "copilot-interaction-bucket",
-          "description": "S3 Bucket Name"
-        },
-        "copilotArchiver.s3.region": {
-          "type": "string",
-          "default": "us-east-1",
-          "description": "AWS Region"
-        },
-        "copilotArchiver.s3.accessKeyId": {
+        "copilotArchiver.backendUrl": {
           "type": "string",
           "default": "",
-          "description": "AWS Access Key ID"
-        },
-        "copilotArchiver.s3.secretAccessKey": {
-          "type": "string",
-          "default": "",
-          "description": "AWS Secret Access Key"
-        },
-        "copilotArchiver.s3.folderPrefix": {
-          "type": "string",
-          "default": "copilot-snapshots",
-          "description": "Folder prefix (directory) inside the bucket. Snapshots will be stored under <prefix>/<chat_id>/..."
+          "description": "URL of the Copilot Archiver Backend Server (e.g., http://localhost:3000)"
         }
       }
     }
