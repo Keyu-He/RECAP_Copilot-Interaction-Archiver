@@ -2,13 +2,16 @@
 // Run with: node test_auth.js
 
 // Default credentials from .env.example
-const BASE_URL = 'http://localhost:3000';
+require('dotenv').config();
+
+const pkg = require('../package.json');
+const BASE_URL = pkg.contributes.configuration.properties['copilotArchiver.backendUrl'].default;
 const ANDREW_ID = 'test_student';
-const PASSWORD = process.env.SHARED_PASSWORD || 'CMU_2026!';
+const PASSWORD = process.env.SHARED_PASSWORD;
 
 async function test() {
-    console.log(`\n🔍 Testing Copilot Archiver Backend at ${BASE_URL}`);
-    console.log(`👤 User: ${ANDREW_ID}, Password: ${PASSWORD}\n`);
+    console.log(`\nTesting Copilot Archiver Backend at ${BASE_URL}`);
+    console.log(`User: ${ANDREW_ID}, Password: ${PASSWORD}\n`);
 
     // 1. LOGIN
     console.log('1. Attempting Login...');
@@ -27,11 +30,10 @@ async function test() {
 
         const data = await res.json();
         token = data.token;
-        console.log('✅ Login Successful!');
-        console.log(`   Token: ${token.substring(0, 20)}...\n`);
+        console.log('Login Successful!');
+        console.log(`   Token: ${token}\n`);
     } catch (err) {
-        console.error('❌ Login Error:', err.message);
-        console.log('   (Did you restart the server and update .env?)\n');
+        console.error('Login Error:', err.message);
         return;
     }
 
@@ -53,11 +55,11 @@ async function test() {
         }
 
         const data = await res.json();
-        console.log('✅ Sign Successful!');
-        console.log(`   Final Key: ${data.key}`); // Should be andrewId/test_chat/auth_test.txt
-        console.log(`   Upload URL: ${data.uploadUrl.substring(0, 50)}...\n`);
+        console.log('Sign Successful!');
+        console.log(`Final Key: ${data.key}`); // Should be andrewId/test_chat/auth_test.txt
+        console.log(`Upload URL: ${data.uploadUrl}\n`);
     } catch (err) {
-        console.error('❌ Sign Error:', err.message);
+        console.error('Sign Error:', err.message);
     }
 }
 

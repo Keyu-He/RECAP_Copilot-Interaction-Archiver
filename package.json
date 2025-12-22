@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "publisher": "KeyuHe",
   "icon": "icon.png",
   "repository": {
@@ -79,8 +79,8 @@
         },
         "copilotArchiver.backendUrl": {
           "type": "string",
-          "default": "",
-          "description": "URL of the Copilot Archiver Backend Server (e.g., http://localhost:3000)"
+          "default": "http://98.80.150.124:3000",
+          "description": "URL of the Copilot Archiver Backend Server (e.g., http://98.80.150.124:3000)"
         }
       }
     }

@@ -205,7 +205,7 @@ export class SnapshotManager {
 
     private async uploadToS3(filePath: string, key: string): Promise<void> {
         const config = vscode.workspace.getConfiguration('copilotArchiver');
-        const backendUrl = config.get<string>('backendUrl', 'http://localhost:3000');
+        const backendUrl = config.get<string>('backendUrl');
 
         if (!backendUrl) return;
 
