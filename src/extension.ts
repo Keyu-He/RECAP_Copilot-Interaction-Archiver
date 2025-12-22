@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const andrewId = await vscode.window.showInputBox({
-                prompt: 'Enter your Andrew ID (e.g., keyuhe)',
+                prompt: 'Enter your Andrew ID',
                 placeHolder: 'andrewId',
                 ignoreFocusOut: true
             });
@@ -70,6 +70,15 @@ export function activate(context: vscode.ExtensionContext) {
     }));
 
     Logger.info('ChatSessionWatcher initialized and listening for changes.');
+
+    // Proactive Login Check
+    setTimeout(async () => {
+        const token = await context.secrets.get('archiver.jwt');
+        if (!token) {
+            Logger.info('No token found on startup. Prompting for login...');
+            vscode.commands.executeCommand('copilotArchiver.login');
+        }
+    }, 1000); // 1s delay to let VS Code settle
 }
 
 export function deactivate() { }
