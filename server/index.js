@@ -33,8 +33,8 @@ app.post('/login', (req, res) => {
         return res.status(401).json({ error: 'Invalid password' });
     }
 
-    // Issue Token: Valid for 7 days
-    const token = jwt.sign({ andrewId }, JWT_SECRET, { expiresIn: '7d' });
+    // Issue Token: Valid for 180 days (Semester)
+    const token = jwt.sign({ andrewId }, JWT_SECRET, { expiresIn: '180d' });
     res.json({ token });
 });
 

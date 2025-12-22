@@ -213,7 +213,14 @@ export class SnapshotManager {
             // Get JWT Token
             const token = await this.secretStorage.get('archiver.jwt');
             if (!token) {
-                Logger.warn("Upload skipped: No Login Token found. Please run 'Copilot Archiver: Login'.");
+                Logger.warn("Upload skipped: No Login Token found.");
+                const selection = await vscode.window.showWarningMessage(
+                    "Copilot Archiver: You are not logged in. Snapshots are not being uploaded.",
+                    "Login"
+                );
+                if (selection === "Login") {
+                    vscode.commands.executeCommand('copilotArchiver.login');
+                }
                 return;
             }
 
@@ -228,6 +235,17 @@ export class SnapshotManager {
             });
 
             if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    await this.secretStorage.delete('archiver.jwt');
+                    const selection = await vscode.window.showWarningMessage(
+                        "Copilot Archiver: Login session expired. Please login again.",
+                        "Login"
+                    );
+                    if (selection === "Login") {
+                        vscode.commands.executeCommand('copilotArchiver.login');
+                    }
+                    return;
+                }
                 throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
             }
 
