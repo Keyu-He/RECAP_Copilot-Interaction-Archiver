@@ -91,7 +91,10 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     if (!SHARED_PASSWORD || !JWT_SECRET) {
-        console.warn("WARNING: SHARED_PASSWORD or JWT_SECRET is missing in .env!");
+        console.error("❌ ERROR: SHARED_PASSWORD or JWT_SECRET is missing in .env!");
+        console.error("   The server cannot secure logins without these. Exiting...");
+        process.exit(1);
     }
     console.log(`Server running on port ${PORT}`);
+    console.log(`Isolation Mode: Enabled (${process.env.S3_BUCKET_NAME})`);
 });

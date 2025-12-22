@@ -214,7 +214,7 @@ export class SnapshotManager {
             const token = await this.secretStorage.get('archiver.jwt');
             if (!token) {
                 Logger.warn("Upload skipped: No Login Token found.");
-                const selection = await vscode.window.showWarningMessage(
+                const selection = await vscode.window.showErrorMessage(
                     "Copilot Archiver: You are not logged in. Snapshots are not being uploaded.",
                     "Login"
                 );
@@ -237,7 +237,7 @@ export class SnapshotManager {
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
                     await this.secretStorage.delete('archiver.jwt');
-                    const selection = await vscode.window.showWarningMessage(
+                    const selection = await vscode.window.showErrorMessage(
                         "Copilot Archiver: Login session expired. Please login again.",
                         "Login"
                     );
