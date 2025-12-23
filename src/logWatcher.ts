@@ -1,3 +1,7 @@
+/*
+This file looks at the Copilot Chat log file and triggers a snapshot when a new turn starts.
+*/
+
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -89,6 +93,7 @@ export class LogWatcher {
         if (!this.logFilePath) return;
 
         try {
+            // Check if the log file has size increase, i.e. new content has been added
             const stats = await fs.promises.stat(this.logFilePath);
             if (stats.size > this.currentSize) {
                 const stream = fs.createReadStream(this.logFilePath, {
@@ -106,6 +111,7 @@ export class LogWatcher {
                 await this.processLogLines(newContent);
             } else if (stats.size < this.currentSize) {
                 // Log rotated or truncated? Reset.
+                Logger.warn('Log rotated or truncated. Resetting current size.');
                 this.currentSize = stats.size;
             }
         } catch (err) {
