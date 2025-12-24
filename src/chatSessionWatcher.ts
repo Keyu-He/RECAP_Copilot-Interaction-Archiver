@@ -1,3 +1,6 @@
+/*
+This file looks at the chat session JSON files and triggers a snapshot when a new turn starts.
+*/
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -134,11 +137,8 @@ export class ChatSessionWatcher {
 
                     const turnData = this.extractTurnData(lastRequest, true);
 
-                    // Output Timestamp: Try modelState.completedAt, fall back if needed
-                    // Note: We need to verify where completedAt is. Usually in modelState matching the turn?
-                    // Or if response is an array of parts, maybe implied.
-                    // User said: requests[i].modelState.completedAt
-                    const outputTimestamp = lastRequest.modelState?.completedAt || turnData.timestamp;
+                    // Output Timestamp: Try modelState.completedAt, fall back to turnData.timestamp
+                    const outputTimestamp = lastRequest.modelState?.completedAt ? new Date(lastRequest.modelState.completedAt).toISOString() : turnData.timestamp;
 
                     await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'output', outputTimestamp);
                 }
@@ -351,21 +351,28 @@ export class ChatSessionWatcher {
             let minDiff = Infinity;
 
             for (const e of entries) {
-                if (e.isDirectory() && e.name.includes(phase)) {
-                    const fullPath = path.join(tempDir, e.name);
-                    try {
-                        const stats = fs.statSync(fullPath);
-                        const snapshotTime = stats.birthtimeMs;
+                if (e.isDirectory()) {
+                    const folderName = e.name; // e.g. 2025-12-23T01:14:48.197Z
 
-                        // Calculate absolute difference between JSON event time and File creation time
-                        const diff = Math.abs(snapshotTime - targetTime);
+                    // Simple parsing since we kept standard ISO format
+                    const snapshotTime = new Date(folderName).getTime();
 
-                        // Match window: 10 seconds triggers
-                        if (diff < 10000 && diff < minDiff) {
-                            minDiff = diff;
-                            bestCandidate = fullPath;
+                    if (!isNaN(snapshotTime)) {
+                        // Calculate difference: Target (JSON Event) vs Snapshot (Log Event)
+                        // We expect Snapshot (Log) to be slightly AFTER or SAME as Target (User Request)
+                        // But usually they are very close.
+                        // User requested: [0, +2] seconds window. i.e. 0 <= (Snapshot - Target) <= 2000
+
+                        const diff = snapshotTime - targetTime;
+
+                        // Check window: 0ms to 2000ms
+                        if (diff >= 0 && diff <= 2000) {
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                bestCandidate = path.join(tempDir, e.name);
+                            }
                         }
-                    } catch (err) { }
+                    }
                 }
             }
             return bestCandidate;
