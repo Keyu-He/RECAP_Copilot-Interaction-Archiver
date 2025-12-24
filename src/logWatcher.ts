@@ -125,17 +125,27 @@ export class LogWatcher {
             // These two triggers covers the input and output triggers in the Copilot Chat, but often we do have extra triggers.
             // Trigger 1: AgentIntent
             // Example: [debug] AgentIntent: rendering ...
-            if (line.includes('AgentIntent:') && line.includes('rendering')) {
-                Logger.info('LogWatcher: Detected AgentIntent Trigger');
-                await this.snapshotManager.captureTempSnapshot();
-            }
-
             // Trigger 2: ccreq (Success)
             // Example: [info] ccreq:... | success | ...
             // Be careful to match the "success" completion line
-            if (line.includes('ccreq:') && line.includes('| success |')) {
-                Logger.info('LogWatcher: Detected ccreq Trigger');
-                await this.snapshotManager.captureTempSnapshot();
+            if ((line.includes('AgentIntent:') && line.includes('rendering'))
+                || (line.includes('ccreq:') && line.includes('| success |'))) {
+                Logger.info('LogWatcher: Detected Trigger');
+                Logger.debug(`LogWatcher: Trigger Line: ${line}`);
+                // Read the timestamp from the log line
+                // It is in the format of: "2025-12-23 01:14:48.197 <Level> ..."
+                // Extract the first 23 chars: "2025-12-23 01:14:48.197"
+                const timestampstr = line.substring(0, 23);
+
+                // Convert to ISO format if valid
+                let isoTimestamp = '';
+                try {
+                    isoTimestamp = new Date(timestampstr).toISOString();
+                } catch (e) {
+                    Logger.warn(`LogWatcher: Failed to parse timestamp '${timestampstr}', using current time.`);
+                    // Pass empty string to let Manager handle it
+                }
+                await this.snapshotManager.captureTempSnapshot(isoTimestamp);
             }
         }
     }
