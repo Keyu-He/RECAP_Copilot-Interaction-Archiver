@@ -67,15 +67,14 @@ After downloading, you will find:
 ```
 downloaded_snapshots/
   <student_andrew_id>/
-    # 1. Full Codebase at specific timestamps
     copilot_snapshots/
-    <chat_session_id1>/
-        <chat_session_id1>.json
-        GithubCopilotChat.log
-        summary.json
-    <chat_session_id2>/
-        <chat_session_id2>.json
-        GithubCopilotChat.log
-        summary.json
-    ...
+        <chat_session_id1>/
+            <chat_session_id1>.json
+            GithubCopilotChat.log
+            summary.json
+        <chat_session_id2>/
+            <chat_session_id2>.json
+            GithubCopilotChat.log
+            summary.json
+        ...
 ```
