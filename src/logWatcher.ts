@@ -128,10 +128,15 @@ export class LogWatcher {
             // Trigger 2: ccreq (Success)
             // Example: [info] ccreq:... | success | ...
             // Be careful to match the "success" completion line
-            if ((line.includes('AgentIntent:') && line.includes('rendering'))
-                || (line.includes('ccreq:') && line.includes('| success |'))) {
-                Logger.info('LogWatcher: Detected Trigger');
-                Logger.debug(`LogWatcher: Trigger Line: ${line}`);
+            const trigger1 = line.includes('AgentIntent:') && line.includes('rendering');
+            const trigger2 = line.includes('ccreq:') && line.includes('| success |');
+            let ccreqPath = '';
+            if (trigger2) {
+                // Read the ccreq file
+                ccreqPath = line.substring(line.indexOf('ccreq:'), line.indexOf('| success |'));
+            }
+            if (trigger1 || trigger2) {
+                Logger.info(`LogWatcher: Detected Trigger. Trigger1: ${trigger1}, Trigger2: ${trigger2}.`);
                 // Read the timestamp from the log line
                 // It is in the format of: "2025-12-23 01:14:48.197 <Level> ..."
                 // Extract the first 23 chars: "2025-12-23 01:14:48.197"
@@ -145,7 +150,7 @@ export class LogWatcher {
                     Logger.warn(`LogWatcher: Failed to parse timestamp '${timestampstr}', using current time.`);
                     // Pass empty string to let Manager handle it
                 }
-                await this.snapshotManager.captureTempSnapshot(isoTimestamp);
+                await this.snapshotManager.captureRepoSnapshot(isoTimestamp, ccreqPath);
             }
         }
     }
