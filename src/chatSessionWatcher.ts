@@ -122,7 +122,7 @@ export class ChatSessionWatcher {
                 // Input Timestamp: Use request.timestamp
                 const inputTimestamp = lastRequest.timestamp;
 
-                await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'input', inputTimestamp);
+                await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'input', inputTimestamp, sessionData);
             }
 
             // --- Condition 2: Output Snapshot (Completion Detected) ---
@@ -140,7 +140,7 @@ export class ChatSessionWatcher {
                     // Output Timestamp: Try modelState.completedAt, fall back to turnData.timestamp
                     const outputTimestamp = lastRequest.modelState?.completedAt ? new Date(lastRequest.modelState.completedAt).toISOString() : turnData.timestamp;
 
-                    await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'output', outputTimestamp);
+                    await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'output', outputTimestamp, sessionData);
                 }
             }
 
@@ -208,109 +208,26 @@ export class ChatSessionWatcher {
         turnIndex: number,
         turnData: ChatTurn,
         phase: 'input' | 'output',
-        targetTimestamp?: string
+        targetTimestamp?: string,
+        sessionData?: any
     ) {
         const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
         if (!workspacePath) return;
 
-        // --- Hybrid Sync Logic ---
+        // 1. Handle Repo Snapshot (Move from Temp)
         const tempSnapshotPath = await this.findMatchingTempSnapshot(workspacePath, phase, targetTimestamp);
-        const config = vscode.workspace.getConfiguration('copilotArchiver');
-        const outputPath = config.get<string>('outputPath', '.snapshots');
 
-        // Paths
-        const chatIdDir = path.join(workspacePath, outputPath, chatId);
-        const codebaseSnapshotsDir = path.join(chatIdDir, 'codebase_snapshots');
-        const metadataDirName = `${turnIndex}_${phase}`; // 1_input, 1_output
-        const metadataDir = path.join(chatIdDir, metadataDirName);
-
-        // Ensure directories exist
-        if (!fs.existsSync(codebaseSnapshotsDir)) {
-            fs.mkdirSync(codebaseSnapshotsDir, { recursive: true });
-        }
-        if (!fs.existsSync(metadataDir)) {
-            fs.mkdirSync(metadataDir, { recursive: true });
-        }
-
-        let finalRepoSnapshotPath: string | undefined;
-
-        // 1. Handle Repo Snapshot (Move from Temp or Fallback)
         if (tempSnapshotPath) {
-            Logger.info(`Syncing temp snapshot for ${phase}: ${path.basename(tempSnapshotPath)} -> Turn ${turnIndex}`);
-
-            const tempDirName = path.basename(tempSnapshotPath);
-            const repoSnapshotName = tempDirName;
-            const destPath = path.join(codebaseSnapshotsDir, repoSnapshotName);
-
-            // Move
-            try {
-                if (fs.existsSync(destPath)) {
-                    fs.rmSync(destPath, { recursive: true, force: true });
-                }
-                fs.renameSync(tempSnapshotPath, destPath);
-
-                // Cleanup internal meta files from repo snapshot
-                const internalMeta = path.join(destPath, '_meta.json');
-                if (fs.existsSync(internalMeta)) fs.unlinkSync(internalMeta);
-                // _timestamp.txt if it existed
-
-                finalRepoSnapshotPath = `../codebase_snapshots/${repoSnapshotName}`; // Relative path for summary.json
-
-                Logger.info(`Moved repo snapshot to ${destPath}`);
-
-            } catch (err) {
-                Logger.error(`Failed to move temp snapshot: ${err}`);
-            }
+            const snapshotTimestamp = path.basename(tempSnapshotPath);
+            Logger.info(`Found timestamp-matched snapshot for ${phase}: ${snapshotTimestamp}`);
         } else {
-            Logger.warn(`No temp snapshot found for ${phase}. Capturing live state.`);
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const repoSnapshotName = `${timestamp}_${phase}_fallback`;
-            const destPath = path.join(codebaseSnapshotsDir, repoSnapshotName);
+            Logger.warn(`No snapshot found for ${phase} to associate.`);
         }
 
-        // 2. Generate summary.json
-        const summary = {
-            turnIndex: turnIndex,
-            phase: phase,
-            timestamp: turnData.timestamp,
-            userPrompt: turnData.userMessage,
-            modelResponse: turnData.botResponse,
-            repoSnapshotPath: finalRepoSnapshotPath || "MISSING_SNAPSHOT"
-        };
-        fs.writeFileSync(path.join(metadataDir, 'summary.json'), JSON.stringify(summary, null, 2));
-
-        // 3. Archive Logs
-        // A. ChatId.json
-        const sessionFileDest = path.join(metadataDir, path.basename(filePath));
-        fs.copyFileSync(filePath, sessionFileDest);
-
-        // B. GitHub Copilot Chat.log
-        const logPath = await this.locateCopilotLogFile();
-        if (logPath && fs.existsSync(logPath)) {
-            const logDest = path.join(metadataDir, 'GitHubCopilotChat.log');
-            fs.copyFileSync(logPath, logDest);
-        } else {
-            Logger.warn('Could not locate GitHub Copilot Chat.log for archiving.');
+        // 2. Update Chat Session File
+        if (sessionData) {
+            await this.snapshotManager.updateChatSessionFile(chatId, sessionData);
         }
-
-        Logger.info(`Metadata and logs archived to ${metadataDir}`);
-
-        // --- S3 Upload triggered ---
-        const s3Prefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-
-        // 1. Upload Repo Snapshot (if validated)
-        if (finalRepoSnapshotPath && finalRepoSnapshotPath !== "MISSING_SNAPSHOT") {
-            // Reconstruct full path. finalRepoSnapshotPath is relative "../codebase_snapshots/..."
-            const repoName = path.basename(finalRepoSnapshotPath);
-            const repoPath = path.join(codebaseSnapshotsDir, repoName);
-            const s3RepoKey = `${s3Prefix}/${chatId}/codebase_snapshots/${repoName}`;
-
-            await this.snapshotManager.uploadDirectory(repoPath, s3RepoKey);
-        }
-
-        // 2. Upload Metadata Folder
-        const s3MetaKey = `${s3Prefix}/${chatId}/${metadataDirName}`;
-        await this.snapshotManager.uploadDirectory(metadataDir, s3MetaKey);
     }
 
     // Helper to find log file (Duplicate of LogWatcher logic for now to keep independent)
@@ -340,7 +257,7 @@ export class ChatSessionWatcher {
         try {
             const config = vscode.workspace.getConfiguration('copilotArchiver');
             const outputPath = config.get<string>('outputPath', '.snapshots');
-            const tempDir = path.join(workspacePath, outputPath, '_temp');
+            const tempDir = path.join(workspacePath, outputPath, 'repo_snapshots');
 
             if (!fs.existsSync(tempDir)) return undefined;
 

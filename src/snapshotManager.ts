@@ -45,68 +45,7 @@ export class SnapshotManager {
         return this.outputPath;
     }
 
-    // async captureSnapshot(
-    //     workspacePath: string,
-    //     chatId: string,
-    //     turnIndex: number,
-    //     debugTimestamp: string,
-    //     debugMessages?: any[],
-    //     debugTurnCount?: number,
-    //     phase?: 'input' | 'output',
-    //     chatSessionPath?: string
-    // ): Promise<void> {
-    //     try {
-    //         const workspaceName = path.basename(workspacePath);
-
-    //         // Create snapshot directory: .snapshots/<chat_id>/<turn_index>
-    //         const snapshotDir = path.join(workspacePath, this.outputPath, chatId, `${turnIndex}${phase ? `_${phase}` : ''}`);
-    //         // Create snapshot directory
-    //         if (!fs.existsSync(snapshotDir)) {
-    //             fs.mkdirSync(snapshotDir, { recursive: true });
-    //         }
-
-    //         // Copy workspace files
-    //         const stats = await this.copyFiles(workspacePath, snapshotDir, workspacePath);
-    //         Logger.info(`Snapshot created at ${snapshotDir}`);
-
-    //         // Copy Chat Session JSON if provided
-    //         if (chatSessionPath && fs.existsSync(chatSessionPath)) {
-    //             const destSessionPath = path.join(snapshotDir, path.basename(chatSessionPath));
-    //             fs.copyFileSync(chatSessionPath, destSessionPath);
-    //         }
-
-    //         // Create metadata file
-    //         const metadata: SnapshotMetadata = {
-    //             turn_index: turnIndex,
-    //             timestamp: debugTimestamp,
-    //             workspace_path: workspacePath,
-    //             chat_id: chatId,
-    //             repo_path: workspacePath,
-    //             files_count: stats.filesCount,
-    //             total_size_bytes: stats.totalSize,
-    //             // Store the structured chat data if available
-    //             chat_data: debugMessages && debugMessages.length > 0 ? debugMessages[0] : undefined
-    //         };
-
-    //         const metadataPath = path.join(snapshotDir, '_snapshot_metadata.json');
-    //         fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
-
-    //         // Zip and Upload to S3
-    //         // Upload to S3 if enabled
-    //         const config = vscode.workspace.getConfiguration('copilotArchiver');
-    //         if (config.get<boolean>('s3.enabled', false)) {
-    //             const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-    //             const s3KeyPrefix = `${s3FolderPrefix}/${chatId}/${turnIndex}${phase ? `_${phase}` : ''}`;
-    //             // Upload directory recursively
-    //             await this.uploadDirectory(snapshotDir, s3KeyPrefix);
-    //         }
-    //     } catch (err) {
-    //         Logger.error(`Failed to capture snapshot: ${err}`);
-    //     }
-    // }
-
-
-    async captureTempSnapshot(timestamp?: string): Promise<void> {
+    async captureRepoSnapshot(timestamp?: string, ccreqPath?: string): Promise<void> {
         try {
             const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (!workspacePath) return;
@@ -115,7 +54,7 @@ export class SnapshotManager {
             if (!timestamp) {
                 Logger.warn('No timestamp provided for temp snapshot, using current time...');
             }
-            const tempDir = path.join(workspacePath, this.outputPath, '_temp', timestamp || currTimestamp);
+            const tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', timestamp || currTimestamp);
 
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
@@ -140,21 +79,32 @@ export class SnapshotManager {
                 fs.copyFileSync(sourcePath, destPath);
             }
 
+            if (ccreqPath) {
+                Logger.debug(`Reading ccreq file structure: ${ccreqPath}`);
+                try {
+                    const uri = vscode.Uri.parse(ccreqPath);
+                    const doc = await vscode.workspace.openTextDocument(uri);
+                    const content = doc.getText();
+
+                    const destPath = path.join(tempDir, "ccreq.md");
+                    // It's likely JSON or text, just save it.
+                    fs.writeFileSync(destPath, content);
+                    Logger.debug(`Saved ccreq content to ${destPath}`);
+                } catch (readErr) {
+                    Logger.warn(`Failed to read/save ccreq file ${ccreqPath}: ${readErr}`);
+                }
+            }
+
             const meta = {
                 input_timestamp: timestamp,
-                capture_timestamp: currTimestamp
+                capture_timestamp: currTimestamp,
+                contains_ccreq: !!ccreqPath,
             };
             fs.writeFileSync(path.join(tempDir, '_meta.json'), JSON.stringify(meta, null, 2));
 
         } catch (err) {
-            Logger.error(`Error capturing temp snapshot: ${err}`);
+            Logger.error(`Error capturing snapshot: ${err}`);
         }
-    }
-
-
-
-    async uploadFile(filePath: string, s3Key: string): Promise<void> {
-        return this.uploadToS3(filePath, s3Key);
     }
 
     async uploadDirectory(dirPath: string, s3Prefix: string): Promise<void> {
@@ -271,45 +221,6 @@ export class SnapshotManager {
         }
     }
 
-    private async copyFiles(
-        src: string,
-        dest: string,
-        workspaceRoot: string
-    ): Promise<{ filesCount: number; totalSize: number }> {
-        let filesCount = 0;
-        let totalSize = 0;
-
-        const entries = fs.readdirSync(src, { withFileTypes: true });
-
-        for (const entry of entries) {
-            const srcPath = path.join(src, entry.name);
-            const destPath = path.join(dest, entry.name);
-
-            // Skip dot-directories entirely (e.g., .mypy_cache, .git, .venv, etc.)
-            if (entry.isDirectory() && entry.name.startsWith('.')) {
-                continue;
-            }
-
-            // Check if should be excluded
-            if (this.shouldExclude(srcPath, workspaceRoot)) {
-                continue;
-            }
-
-            if (entry.isDirectory()) {
-                fs.mkdirSync(destPath, { recursive: true });
-                const subStats = await this.copyFiles(srcPath, destPath, workspaceRoot);
-                filesCount += subStats.filesCount;
-                totalSize += subStats.totalSize;
-            } else if (entry.isFile()) {
-                const stats = fs.statSync(srcPath);
-                fs.copyFileSync(srcPath, destPath);
-                filesCount++;
-                totalSize += stats.size;
-            }
-        }
-
-        return { filesCount, totalSize };
-    }
 
     private shouldExclude(filePath: string, workspaceRoot: string): boolean {
         const relativePath = path.relative(workspaceRoot, filePath);
@@ -332,5 +243,33 @@ export class SnapshotManager {
         }
 
         return false;
+    }
+
+    async updateChatSessionFile(chatId: string, sessionData: any): Promise<void> {
+        try {
+            const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+            if (!workspacePath) return;
+
+            const chatDir = path.join(workspacePath, this.outputPath, chatId);
+            if (!fs.existsSync(chatDir)) {
+                fs.mkdirSync(chatDir, { recursive: true });
+            }
+
+            // Overwrite chat_session.json with latest data
+            const sessionFilePath = path.join(chatDir, 'chat_session.json');
+            fs.writeFileSync(sessionFilePath, JSON.stringify(sessionData, null, 2));
+            Logger.info(`Updated chat_session.json for ${chatId}`);
+
+            // Upload updated session file
+            const config = vscode.workspace.getConfiguration('copilotArchiver');
+            if (config.get<boolean>('s3.enabled', false)) {
+                const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
+                const s3Key = `${s3FolderPrefix}/${chatId}/chat_session.json`;
+                this.uploadToS3(sessionFilePath, s3Key).catch(e => Logger.error(`Session file upload failed: ${e}`));
+            }
+
+        } catch (err) {
+            Logger.error(`Failed to update chat session file: ${err}`);
+        }
     }
 }

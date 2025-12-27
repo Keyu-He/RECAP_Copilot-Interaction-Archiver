@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.6.4",
+  "version": "0.7.1",
   "publisher": "KeyuHe",
   "icon": "icon.png",
   "repository": {
