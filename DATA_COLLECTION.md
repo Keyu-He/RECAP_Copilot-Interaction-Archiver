@@ -8,8 +8,9 @@ Student data is securely stored in your configured S3 bucket with the following 
 s3://<bucket-name>/
     <andrewId>/
         <chatId>/
-            codebase_snapshots/
-                <turn_index>_<phase>/
+            chat_session.json
+            repo_snapshots/
+                <timestamp>/
 ```
 
 We provide a utility script (`server/download_s3.js`) to download and organize this data locally.
@@ -68,13 +69,10 @@ After downloading, you will find:
 downloaded_snapshots/
   <student_andrew_id>/
     copilot_snapshots/
-        <chat_session_id1>/
-            <chat_session_id1>.json
-            GithubCopilotChat.log
-            summary.json
-        <chat_session_id2>/
-            <chat_session_id2>.json
-            GithubCopilotChat.log
-            summary.json
-        ...
+        <chat_session_id>/
+            chat_session.json            <-- Full chat history
+            repo_snapshots/
+                <timestamp1>/          <-- Code snapshot
+                <timestamp2>/
+            ...
 ```
