@@ -5,9 +5,31 @@ import { Logger } from './logger';
 import { PasteWatcher } from './pasteWatcher';
 import { LogWatcher } from './logWatcher';
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize(context, 'Copilot Archiver');
     Logger.info('Copilot Interaction Archiver is now active');
+
+    // 1. Strict Dependency Check: GitHub Copilot Chat
+    const copilotExtension = vscode.extensions.getExtension('GitHub.copilot-chat');
+    if (!copilotExtension) {
+        Logger.error('GitHub Copilot Chat extension is not installed.');
+        vscode.window.showErrorMessage(
+            'Copilot Interaction Archiver requires "GitHub Copilot Chat" to be installed. The extension will not activate.'
+        );
+        return; // Halt activation
+    }
+
+    if (!copilotExtension.isActive) {
+        Logger.info('Activating GitHub Copilot Chat dependency...');
+        try {
+            await copilotExtension.activate();
+            Logger.info('GitHub Copilot Chat activated.');
+        } catch (err) {
+            Logger.error(`Failed to activate GitHub Copilot Chat: ${err}`);
+            vscode.window.showErrorMessage('Failed to activate GitHub Copilot Chat. Copilot Archiver cannot start.');
+            return;
+        }
+    }
 
     const snapshotManager = new SnapshotManager(context.secrets);
     const chatSessionWatcher = new ChatSessionWatcher(context, snapshotManager);

@@ -29,8 +29,32 @@ export class LogWatcher {
             Logger.info(`Found Copilot Chat log: ${this.logFilePath}`);
             this.startTailing();
         } else {
-            Logger.warn('Could not locate GitHub Copilot Chat output.log. Real-time triggers disabled.');
+            this.handleMissingLog();
         }
+    }
+
+    private handleMissingLog() {
+        const msg = 'Copilot Archiver: Could not locate "GitHub Copilot Chat.log". Real-time snapshots will NOT work. Please ensure Copilot Chat is active.';
+
+        const notify = () => {
+            Logger.error(msg);
+            vscode.window.showErrorMessage(msg);
+        };
+
+        notify(); // First notification
+
+        // Check again every 30 seconds
+        this.tailInterval = setInterval(async () => {
+            this.logFilePath = await this.locateCopilotLogFile();
+            if (this.logFilePath) {
+                if (this.tailInterval) clearInterval(this.tailInterval);
+                Logger.info(`Found Copilot Chat log: ${this.logFilePath}`);
+                this.startTailing();
+                vscode.window.showInformationMessage("Copilot Archiver: Copilot Chat log found. Real-time snapshots active.");
+            } else {
+                notify();
+            }
+        }, 30000);
     }
 
     private async locateCopilotLogFile(): Promise<string | undefined> {

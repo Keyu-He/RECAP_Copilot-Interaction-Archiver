@@ -1,6 +1,7 @@
 # Copilot Interaction Archiver
 
 **The Copilot Interaction Archiver** is a research tool designed to automatically capture and archive your interactions with GitHub Copilot. It creates a detailed timeline of your coding session, including chat logs and code snapshots.
+**Note:** You must provide your CMU Andrew ID and Class Password to login to this extension.
 
 ## Prerequisites
 *   **VS Code** (v1.80.0 or higher)
