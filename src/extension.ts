@@ -51,13 +51,33 @@ export async function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            const andrewId = await vscode.window.showInputBox({
-                prompt: 'Enter your Andrew ID',
-                placeHolder: 'andrewId',
-                ignoreFocusOut: true
-            });
-            if (!andrewId) return;
+            let andrewId = '';
+            let confirmed = false;
 
+            // 1. Enter and Confirm Andrew ID
+            while (!confirmed) {
+                const input = await vscode.window.showInputBox({
+                    prompt: 'Enter your Andrew ID',
+                    placeHolder: 'andrewId',
+                    value: andrewId, // Pre-fill if editing
+                    ignoreFocusOut: true
+                });
+                if (!input) return; // User cancelled
+
+                andrewId = input;
+
+                const selection = await vscode.window.showQuickPick(
+                    [`Confirm: ${andrewId}`, 'Edit / Re-enter'],
+                    { placeHolder: `Is "${andrewId}" correct?`, ignoreFocusOut: true }
+                );
+
+                if (!selection) return; // User cancelled
+                if (selection.startsWith('Confirm')) {
+                    confirmed = true;
+                }
+            }
+
+            // 2. Enter Password
             const password = await vscode.window.showInputBox({
                 prompt: 'Enter the Class Password',
                 password: true,
@@ -65,11 +85,17 @@ export async function activate(context: vscode.ExtensionContext) {
             });
             if (!password) return;
 
-            // Call Login Endpoint
+            // 3. Anonymize: Hash (AndrewID + Password)
+            const crypto = require('crypto');
+            const hashedId = crypto.createHash('sha256').update(andrewId + password).digest('hex');
+
+            Logger.info(`Logging in with hashed ID: ${hashedId.substring(0, 8)}...`);
+
+            // 4. Call Login Endpoint
             const response = await fetch(`${backendUrl}/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ andrewId, password })
+                body: JSON.stringify({ userId: hashedId, password })
             });
 
             if (!response.ok) {
@@ -80,6 +106,9 @@ export async function activate(context: vscode.ExtensionContext) {
             const data = await response.json() as { token: string };
             if (data.token) {
                 await context.secrets.store('archiver.jwt', data.token);
+                // Store raw ID in globalState for display only
+                await context.globalState.update('archiver.user_display', andrewId);
+
                 vscode.window.showInformationMessage(`Copilot Archiver: Login successful as ${andrewId}`);
             } else {
                 throw new Error('No token returned from server');

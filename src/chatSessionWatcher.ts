@@ -276,16 +276,13 @@ export class ChatSessionWatcher {
 
                     if (!isNaN(snapshotTime)) {
                         // Calculate difference: Target (JSON Event) vs Snapshot (Log Event)
-                        // We expect Snapshot (Log) to be slightly AFTER or SAME as Target (User Request)
-                        // But usually they are very close.
-                        // User requested: [0, +2] seconds window. i.e. 0 <= (Snapshot - Target) <= 2000
 
                         const diff = snapshotTime - targetTime;
 
-                        // Check window: 0ms to 2000ms
-                        if (diff >= 0 && diff <= 2000) {
-                            if (diff < minDiff) {
-                                minDiff = diff;
+                        // Check window: -5000ms to 5000ms
+                        if (diff >= -5000 && diff <= 5000) {
+                            if (Math.abs(diff) < minDiff) {
+                                minDiff = Math.abs(diff);
                                 bestCandidate = path.join(tempDir, e.name);
                             }
                         }

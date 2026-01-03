@@ -6,7 +6,7 @@ This guide is for **administrators and researchers** who need to bulk download t
 Student data is securely stored in your configured S3 bucket with the following structure:
 ```
 s3://<bucket-name>/
-    <andrewId>/
+    <userId>/
         repo_snapshots/
             <timestamp>/
         <chatId>/
@@ -61,7 +61,7 @@ node download_s3.js
 ### What Happens?
 *   The script lists all objects in the bucket.
 *   It downloads them to `../downloaded_snapshots/` (relative to the `server` folder).
-*   It preserves the folder structure: `downloaded_snapshots/<andrewId>/<chatId>/...`
+*   It preserves the folder structure: `downloaded_snapshots/<userId>/<chatId>/...`
 
 ## Data Structure
 After downloading, you will find:

@@ -6,12 +6,12 @@ require('dotenv').config();
 
 const pkg = require('../package.json');
 const BASE_URL = pkg.contributes.configuration.properties['copilotArchiver.backendUrl'].default;
-const ANDREW_ID = 'test_student';
+const USER_ID = 'test_student';
 const PASSWORD = process.env.SHARED_PASSWORD;
 
 async function test() {
     console.log(`\nTesting Copilot Archiver Backend at ${BASE_URL}`);
-    console.log(`User: ${ANDREW_ID}, Password: ${PASSWORD}\n`);
+    console.log(`User: ${USER_ID}, Password: ${PASSWORD}\n`);
 
     // 1. LOGIN
     console.log('1. Attempting Login...');
@@ -20,7 +20,7 @@ async function test() {
         const res = await fetch(`${BASE_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ andrewId: ANDREW_ID, password: PASSWORD })
+            body: JSON.stringify({ userId: USER_ID, password: PASSWORD })
         });
 
         if (!res.ok) {
@@ -56,7 +56,7 @@ async function test() {
 
         const data = await res.json();
         console.log('Sign Successful!');
-        console.log(`Final Key: ${data.key}`); // Should be andrewId/test_chat/auth_test.txt
+        console.log(`Final Key: ${data.key}`); // Should be userId/test_chat/auth_test.txt
         console.log(`Upload URL: ${data.uploadUrl}\n`);
     } catch (err) {
         console.error('Sign Error:', err.message);
