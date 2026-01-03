@@ -46,6 +46,9 @@ export class SnapshotManager {
     }
 
     async captureRepoSnapshot(timestamp?: string, ccreqPath?: string): Promise<void> {
+        let tempDir = '';
+        let isEphemeral = false;
+
         try {
             const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (!workspacePath) return;
@@ -54,7 +57,20 @@ export class SnapshotManager {
             if (!timestamp) {
                 Logger.warn('No timestamp provided for temp snapshot, using current time...');
             }
-            const tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', timestamp || currTimestamp);
+
+            const config = vscode.workspace.getConfiguration('copilotArchiver');
+            const storeLocally = config.get<boolean>('storeLocally', true);
+
+            // Determine location
+            if (storeLocally) {
+                tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', timestamp || currTimestamp);
+            } else {
+                // Use system temp directory
+                const os = require('os');
+                const uuid = require('crypto').randomUUID(); // Node 14+ / VSCode built-in
+                tempDir = path.join(os.tmpdir(), 'copilot-archiver', 'repo_snapshots', `${timestamp || currTimestamp}-${uuid}`);
+                isEphemeral = true;
+            }
 
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
@@ -104,22 +120,26 @@ export class SnapshotManager {
             fs.writeFileSync(path.join(tempDir, '_meta.json'), JSON.stringify(meta, null, 2));
 
             // Upload the snapshot to S3 immediately
-            // Path: repo_snapshots/<timestamp>
-            // This mirrors the local structure to S3 under the user's root.
-            const config = vscode.workspace.getConfiguration('copilotArchiver');
             if (config.get<boolean>('s3.enabled', false)) {
-                // S3 Key: <prefix>/repo_snapshots/<timestamp>
-                // Note: We do NOT nest under chatID anymore for snapshots.
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
                 const s3Key = `${s3FolderPrefix}/repo_snapshots/${timestamp || currTimestamp}`;
 
                 Logger.info(`Uploading snapshot ${timestamp || currTimestamp} to S3...`);
-                // Await to ensure it's done or at least started reliably.
                 await this.uploadDirectory(tempDir, s3Key);
             }
 
         } catch (err) {
             Logger.error(`Error capturing snapshot: ${err}`);
+        } finally {
+            // Cleanup if ephemeral
+            if (isEphemeral && tempDir && fs.existsSync(tempDir)) {
+                try {
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                    Logger.info(`Cleaned up ephemeral snapshot: ${tempDir}`);
+                } catch (cleanupErr) {
+                    Logger.error(`Failed to cleanup ephemeral snapshot ${tempDir}: ${cleanupErr}`);
+                }
+            }
         }
     }
 
@@ -295,44 +315,83 @@ export class SnapshotManager {
     }
 
     async updateChatSessionFile(chatId: string, sessionData: any): Promise<void> {
+        let tempDir = '';
+        let isEphemeral = false;
+
         try {
             const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (!workspacePath) return;
 
-            const chatDir = path.join(workspacePath, this.outputPath, chatId);
+            const config = vscode.workspace.getConfiguration('copilotArchiver');
+            const storeLocally = config.get<boolean>('storeLocally', true);
+
+            let chatDir = '';
+
+            if (storeLocally) {
+                chatDir = path.join(workspacePath, this.outputPath, chatId);
+            } else {
+                // Ephemeral
+                const os = require('os');
+                const uuid = require('crypto').randomUUID();
+                tempDir = path.join(os.tmpdir(), 'copilot-archiver', chatId, uuid); // chatId in path for structure
+                chatDir = tempDir;
+                isEphemeral = true;
+            }
+
             if (!fs.existsSync(chatDir)) {
                 fs.mkdirSync(chatDir, { recursive: true });
             }
 
-            // Overwrite chat_session.json with latest data
+            // Write chat_session.json with latest data
             const sessionFilePath = path.join(chatDir, 'chat_session.json');
             fs.writeFileSync(sessionFilePath, JSON.stringify(sessionData, null, 2));
-            Logger.info(`Updated chat_session.json for ${chatId}`);
+            if (storeLocally) {
+                Logger.info(`Updated chat_session.json for ${chatId}`);
+            }
 
             // Ensure meta.json exists (mapping chatId -> workspace)
+            // Even in ephemeral mode, we need to create it to upload it.
             const metaFilePath = path.join(chatDir, 'metadata.json');
             if (!fs.existsSync(metaFilePath)) {
                 const meta = { workspacePath: workspacePath };
                 fs.writeFileSync(metaFilePath, JSON.stringify(meta, null, 2));
-                Logger.info(`Created metadata.json for ${chatId}`);
+                if (storeLocally) {
+                    Logger.info(`Created metadata.json for ${chatId}`);
+                }
             }
 
             // Upload files to S3
-            const config = vscode.workspace.getConfiguration('copilotArchiver');
             if (config.get<boolean>('s3.enabled', false)) {
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
+                const uploadPromises: Promise<void>[] = [];
 
                 // Upload chat_session.json
                 const sessionS3Key = `${s3FolderPrefix}/${chatId}/chat_session.json`;
-                this.uploadToS3(sessionFilePath, sessionS3Key).catch(e => Logger.error(`Session file upload failed: ${e}`));
+                uploadPromises.push(this.uploadToS3(sessionFilePath, sessionS3Key).catch(e => Logger.error(`Session file upload failed: ${e}`)));
 
                 // Upload metadata.json
                 const metaS3Key = `${s3FolderPrefix}/${chatId}/metadata.json`;
-                this.uploadToS3(metaFilePath, metaS3Key).catch(e => Logger.error(`Metadata file upload failed: ${e}`));
+                uploadPromises.push(this.uploadToS3(metaFilePath, metaS3Key).catch(e => Logger.error(`Metadata file upload failed: ${e}`)));
+
+                // If ephemeral, await the uploads to ensure they complete before cleanup
+                if (isEphemeral) {
+                    await Promise.all(uploadPromises);
+                }
             }
 
         } catch (err) {
             Logger.error(`Failed to update chat session file: ${err}`);
+        } finally {
+            // Cleanup if ephemeral
+            if (isEphemeral && tempDir && fs.existsSync(tempDir)) {
+                try {
+                    fs.rmSync(tempDir, { recursive: true, force: true });
+                    Logger.info(`Cleaned up ephemeral chat session: ${tempDir}`);
+                } catch (cleanupErr) {
+                    Logger.error(`Failed to cleanup ephemeral chat session ${tempDir}: ${cleanupErr}`);
+                }
+            }
         }
     }
 }
+

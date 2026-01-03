@@ -43,6 +43,11 @@
           "default": true,
           "description": "Enable automatic snapshot capture"
         },
+        "copilotArchiver.storeLocally": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true, snapshots are stored in the workspace .snapshots folder. If false, they are temporary and deleted after S3 upload."
+        },
         "copilotArchiver.outputPath": {
           "type": "string",
           "default": ".snapshots",

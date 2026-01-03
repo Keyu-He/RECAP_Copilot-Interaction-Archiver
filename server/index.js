@@ -23,10 +23,10 @@ const JWT_SECRET = process.env.JWT_SECRET; // CRITICAL: This must be set in .env
 
 // --- Authentication Endpoint ---
 app.post('/login', (req, res) => {
-    const { andrewId, password } = req.body;
+    const {userId, password} = req.body;
 
-    if (!andrewId || !password) {
-        return res.status(400).json({ error: 'Missing andrewId or password' });
+    if (!userId || !password) {
+        return res.status(400).json({ error: 'Missing identity (hashedId) or password' });
     }
 
     if (password !== SHARED_PASSWORD) {
@@ -34,7 +34,8 @@ app.post('/login', (req, res) => {
     }
 
     // Issue Token: Valid for 180 days (Semester)
-    const token = jwt.sign({ andrewId }, JWT_SECRET, { expiresIn: '180d' });
+    // We store the ID (hash) in the 'userId' field of the token for compatibility
+    const token = jwt.sign({ userId: userId }, JWT_SECRET, { expiresIn: '180d' });
     res.json({ token });
 });
 
@@ -47,7 +48,7 @@ const authenticateToken = (req, res, next) => {
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
-        req.user = user; // { andrewId: 'keyuhe', ... }
+        req.user = user;
         next();
     });
 };
@@ -56,16 +57,16 @@ const authenticateToken = (req, res, next) => {
 app.post('/sign-upload', authenticateToken, async (req, res) => {
     try {
         const { key, contentType } = req.body;
-        const andrewId = req.user.andrewId;
+        const userId = req.user.userId;
 
         if (!key) {
             return res.status(400).json({ error: 'Missing "key" in request body' });
         }
 
-        // ENFORCED ISOLATION: Prefix key with andrewId
+        // ENFORCED ISOLATION: Prefix key with userId
         // The extension might switch to sending relative paths like "chat_123/file.txt"
         // We will store it as: "studentA/chat_123/file.txt"
-        const isolatedKey = `${andrewId}/${key}`;
+        const isolatedKey = `${userId}/${key}`;
 
         const command = new PutObjectCommand({
             Bucket: BUCKET_NAME,
@@ -75,7 +76,7 @@ app.post('/sign-upload', authenticateToken, async (req, res) => {
 
         const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 }); // 5 minutes
 
-        console.log(`Generated signed URL for: ${isolatedKey} (User: ${andrewId})`);
+        console.log(`Generated signed URL for: ${isolatedKey} (User: ${userId})`);
         res.json({ uploadUrl, key: isolatedKey }); // Return full key for debugging
     } catch (err) {
         console.error('Error generating signed URL:', err);
