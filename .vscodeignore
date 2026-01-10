@@ -9,3 +9,5 @@ server/**
 DEPLOY.md
 .env
 .venv
+downloaded_snapshots/**
+local_analysis/**

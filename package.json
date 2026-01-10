@@ -1,8 +1,8 @@
 {
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
-  "description": "Automatically archive your workspace at the end of each Copilot turn",
-  "version": "0.7.3",
+  "description": "Archives interaction data from GitHub Copilot Chat",
+  "version": "0.9.0",
   "publisher": "Copilot-Archiver",
   "icon": "icon.png",
   "repository": {
@@ -23,16 +23,32 @@
   "contributes": {
     "commands": [
       {
-        "command": "copilotArchiver.enable",
-        "title": "Copilot Archiver: Enable"
-      },
-      {
-        "command": "copilotArchiver.disable",
-        "title": "Copilot Archiver: Disable"
+        "command": "copilotArchiver.login",
+        "title": "Copilot Archiver: Login"
       },
       {
         "command": "copilotArchiver.captureNow",
         "title": "Copilot Archiver: Capture Now"
+      },
+      {
+        "command": "copilotArchiver.logout",
+        "title": "Copilot Archiver: Logout"
+      },
+      {
+        "command": "copilotArchiver.enableWorkspace",
+        "title": "Copilot Archiver: Enable for this Workspace"
+      },
+      {
+        "command": "copilotArchiver.disableWorkspace",
+        "title": "Copilot Archiver: Disable for this Workspace"
+      },
+      {
+        "command": "copilotArchiver.showMenu",
+        "title": "Copilot Archiver: Show Menu"
+      },
+      {
+        "command": "copilotArchiver.enableCopilotDebug",
+        "title": "Copilot Archiver: Enable Copilot Debug Logging"
       }
     ],
     "configuration": {
@@ -42,11 +58,6 @@
           "type": "boolean",
           "default": true,
           "description": "Enable automatic snapshot capture"
-        },
-        "copilotArchiver.storeLocally": {
-          "type": "boolean",
-          "default": true,
-          "description": "If true, snapshots are stored in the workspace .snapshots folder. If false, they are temporary and deleted after S3 upload."
         },
         "copilotArchiver.outputPath": {
           "type": "string",
