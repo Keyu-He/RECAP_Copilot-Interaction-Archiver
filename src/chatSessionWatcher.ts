@@ -17,6 +17,7 @@ interface ChatTurn {
     thinking?: string;
     toolCalls?: any[];
     edits?: any[];
+    agentIntent?: any;
     metadata?: any;
 }
 
@@ -198,6 +199,7 @@ export class ChatSessionWatcher {
             thinking: thinking.trim(),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             edits: edits.length > 0 ? edits : undefined,
+            agentIntent: request.usedContext?.agentIntent, // Assuming it lives here or top level
             metadata: isOutput ? request : undefined
         };
     }
@@ -269,10 +271,10 @@ export class ChatSessionWatcher {
 
             for (const e of entries) {
                 if (e.isDirectory()) {
-                    const folderName = e.name; // e.g. 2025-12-23T01:14:48.197Z
-
-                    // Simple parsing since we kept standard ISO format
-                    const snapshotTime = new Date(folderName).getTime();
+                    const folderName = e.name; // e.g. 2025-12-23T01_14_48.197Z
+                    // Restore colons for ISO parsing
+                    const isoString = folderName.replace(/_/g, ':');
+                    const snapshotTime = new Date(isoString).getTime();
 
                     if (!isNaN(snapshotTime)) {
                         // Calculate difference: Target (JSON Event) vs Snapshot (Log Event)

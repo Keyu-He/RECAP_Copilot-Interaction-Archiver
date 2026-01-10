@@ -48,6 +48,7 @@ export class SnapshotManager {
     async captureRepoSnapshot(timestamp?: string, ccreqPath?: string): Promise<void> {
         let tempDir = '';
         let isEphemeral = false;
+        let interactionType: string | undefined;
 
         try {
             const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -59,16 +60,22 @@ export class SnapshotManager {
             }
 
             const config = vscode.workspace.getConfiguration('copilotArchiver');
-            const storeLocally = config.get<boolean>('storeLocally', true);
+            // const storeLocally = config.get<boolean>('storeLocally', true);
+            const storeLocally = true; // We set storeLocally always be true for now, since we are now optimizing the upload process
 
             // Determine location
+            // Sanitize timestamp for directory name (Windows does not allow colons)
+            const dirTimestamp = (timestamp || currTimestamp).replace(/:/g, '_');
+
             if (storeLocally) {
-                tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', timestamp || currTimestamp);
+                tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', dirTimestamp);
             } else {
                 // Use system temp directory
                 const os = require('os');
                 const uuid = require('crypto').randomUUID(); // Node 14+ / VSCode built-in
-                tempDir = path.join(os.tmpdir(), 'copilot-archiver', 'repo_snapshots', `${timestamp || currTimestamp}-${uuid}`);
+                // Sanitize timestamp for directory name
+                const dirTimestamp = (timestamp || currTimestamp).replace(/:/g, '_');
+                tempDir = path.join(os.tmpdir(), 'copilot-archiver', 'repo_snapshots', `${dirTimestamp}-${uuid}`);
                 isEphemeral = true;
             }
 
@@ -102,6 +109,14 @@ export class SnapshotManager {
                     const doc = await vscode.workspace.openTextDocument(uri);
                     const content = doc.getText();
 
+                    // Parse requestType from content matches: "requestType      : <Type>"
+                    // Regex finds the first match from top to bottom, so it naturally finds the header entry.
+                    const requestTypeMatch = content.match(/requestType\s*:\s*(.*)/);
+                    if (requestTypeMatch && requestTypeMatch[1]) {
+                        interactionType = requestTypeMatch[1].trim();
+                        Logger.info(`Detected interaction type: ${interactionType}`);
+                    }
+
                     const destPath = path.join(tempDir, "ccreq.md");
                     // It's likely JSON or text, just save it.
                     fs.writeFileSync(destPath, content);
@@ -115,6 +130,7 @@ export class SnapshotManager {
                 input_timestamp: timestamp,
                 capture_timestamp: currTimestamp,
                 contain_ccreq: !!ccreqPath,
+                interaction_type: interactionType || 'unknown',
                 workspace_path: workspacePath // Added workspace path
             };
             fs.writeFileSync(path.join(tempDir, '_meta.json'), JSON.stringify(meta, null, 2));
@@ -291,7 +307,9 @@ export class SnapshotManager {
             if (!workspacePath) return;
 
             // Local Path: .snapshots/repo_snapshots/<timestamp>
-            const localSnapshotDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', timestamp);
+            // Sanitize timestamp (replace : with _) to match file system
+            const safeTimestamp = timestamp.replace(/:/g, '_');
+            const localSnapshotDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', safeTimestamp);
 
             if (!fs.existsSync(localSnapshotDir)) {
                 Logger.warn(`archiveRepoSnapshot: Snapshot for timestamp ${timestamp} not found at ${localSnapshotDir}`);
