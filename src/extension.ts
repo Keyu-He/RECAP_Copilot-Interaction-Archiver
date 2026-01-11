@@ -172,6 +172,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // First time in this workspace: Ask permission
         const selection = await vscode.window.showInformationMessage(
             'Enable Copilot Interaction Archiver for this workspace?',
+            { modal: true },
             'Yes', 'No'
         );
 

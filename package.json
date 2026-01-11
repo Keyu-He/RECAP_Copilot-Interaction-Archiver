@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Archives interaction data from GitHub Copilot Chat",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "publisher": "Copilot-Archiver",
   "icon": "icon.png",
   "repository": {
