@@ -9,6 +9,9 @@ s3://<bucket-name>/
     <userId>/
         repo_snapshots/
             <timestamp>/
+                repo/              <-- User files here
+                ccreq.md
+                _meta.json
         <chatId>/
             metadata.json
             chat_session.json
@@ -71,9 +74,12 @@ downloaded_snapshots/
   <student_andrew_id>/
     copilot_snapshots/
         repo_snapshots/
-            <timestamp1>/              <-- Code snapshot
-            <timestamp2>/
+            <timestamp1>/
+                repo/                    <-- User source code
+                ccreq.md                 <-- Request context (if available)
+                _meta.json               <-- Metadata
+            <timestamp2>/...
         <chat_session_id>/
-            metadata.json                <-- Metadata for the chat session
+            metadata.json                <-- Metadata for the chat session (e.g. workspace path)
             chat_session.json            <-- Full chat history
 ```

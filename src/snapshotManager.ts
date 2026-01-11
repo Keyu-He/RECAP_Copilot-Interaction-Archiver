@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { Logger } from './logger';
+import { SNAPSHOT_BLACKLIST_PATTERNS, SNAPSHOT_WHITELIST_EXTENSIONS } from './constants';
 
 interface SnapshotMetadata {
     turn_index: number;
@@ -83,16 +84,28 @@ export class SnapshotManager {
                 fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+            // Construct Glob Pattern from Whitelist
+            // Format: "**/*.{ts,js,py,...}"
+            const extensions = SNAPSHOT_WHITELIST_EXTENSIONS.map(ext => ext.replace(/^\./, '')).join(',');
+            const globPattern = `**/*.{${extensions}}`;
+
+            Logger.info(`Using search glob: ${globPattern}`);
+            const files = await vscode.workspace.findFiles(globPattern, '**/node_modules/**');
 
             for (const file of files) {
                 const relativePath = vscode.workspace.asRelativePath(file);
-                if (relativePath.startsWith('.snapshots') || relativePath.startsWith('.git') || relativePath.startsWith('.mypy_cache') || relativePath.includes('node_modules')) {
+                // Check Blacklist
+                const segments = relativePath.split(/[/\\]/);
+                // Exclude if any segment starts with '.' OR matches a blacklist item perfectly
+                const isBlacklisted = segments.some(s => s.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(s));
+
+                if (isBlacklisted) {
                     continue;
                 }
 
                 const sourcePath = file.fsPath;
-                const destPath = path.join(tempDir, relativePath);
+                // Move user files into 'repo' subdirectory to avoid collision with metadata
+                const destPath = path.join(tempDir, 'repo', relativePath);
 
                 const destFileDir = path.dirname(destPath);
                 if (!fs.existsSync(destFileDir)) {
@@ -169,12 +182,21 @@ export class SnapshotManager {
             const entries = fs.readdirSync(dir, { withFileTypes: true });
             for (const entry of entries) {
                 const fullPath = path.join(dir, entry.name);
+
+                // Blacklist Check (Folder or File)
+                // Skip hidden files/folders or explicitly blacklisted names
+                if (entry.name.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(entry.name)) {
+                    continue;
+                }
+
                 if (entry.isDirectory()) {
-                    if (!entry.name.startsWith('.')) { // basic skip
-                        walk(fullPath);
-                    }
+                    walk(fullPath);
                 } else {
-                    files.push(fullPath);
+                    // File Whitelist Check
+                    const ext = path.extname(entry.name).toLowerCase();
+                    if (SNAPSHOT_WHITELIST_EXTENSIONS.includes(ext)) {
+                        files.push(fullPath);
+                    }
                 }
             }
         };

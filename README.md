@@ -8,74 +8,66 @@
 *   **Node.js** (v18 or higher)
 *   **Git**
 
-## Getting Started
+## Usage Guide
 
-### 1. Build and Install the Extension
+### 1. Installation
+1.  Obtain the `.vsix` file from your instructor or build it from source (see below).
+2.  Open VS Code.
+3.  Go to Extensions -> `...` (Views and More Actions) -> **Install from VSIX...**
+4.  Select the file.
 
-If you haven't been provided with a `.vsix` file, you need to build it from source:
+### 2. Activation for Workspace
+When you open a folder/workspace for the first time, you will see a notification:
+> "Enable Copilot Interaction Archiver for this workspace?"
 
-1.  **Clone the repository**:
-    ```bash
-    git clone https://github.com/keyuhe/copilot-archiver.git
-    cd copilot-archiver
-    ```
+![Placeholder: Screenshot of the Enable Workspace Modal Prompt]
 
-2.  **Install dependencies and compile**:
-    ```bash
-    npm install
-    npm run compile
-    ```
+1.  Click **Yes**.
+2.  This ensures the archiver only runs on approved homework assignments.
 
-3.  **Package the extension**:
-    ```bash
-    # Install vsce if you haven't already
-    npm install -g @vscode/vsce
-    
-    # Create the package
-    vsce package
-    ```
-    *This will generate a file named `copilot-archiver-0.6.4.vsix` in the directory.*
-
-4.  **Install the VSIX**:
-    *   Open **VS Code**.
-    *   Go to the **Extensions** view (`Cmd+Shift+X` or `Ctrl+Shift+X`).
-    *   Click the **...** (three dots) action menu in the top-right corner.
-    *   Select **"Install from VSIX..."**.
-    *   Select the generated `copilot-archiver-0.6.4.vsix` file.
-
-### 2. Enable for Workspace Only
-To ensure the archiver only runs on your homework assignments:
-1.  In the **Extensions** view, find **Copilot Interaction Archiver**.
-2.  Click the **Disable** button -> Select **Disable**.
-3.  Open your homework folder (workspace).
-4.  Go back to the extension entry.
-5.  Click **Enable** -> Select **Enable (Workspace)**.
+*If you missed the prompt or need to re-enable it:*
+- Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
+- Run: **`Copilot Archiver: Enable for this Workspace`**.
 
 ### 3. Log In
-The extension requires authentication to securely upload your data.
+1.  Open Command Palette.
+2.  Run: **`Copilot Archiver: Login`**.
+3.  Enter your **Andrew ID**.
+4.  Enter the **Class Password**.
 
-1.  Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows) to open the Command Palette.
-2.  Type and run: **`Copilot Archiver: Login`**.
-3.  Enter your **Andrew ID** when prompted.
-4.  Enter the **Class Password** provided by your instructor.
+![Placeholder: GIF of the Login Flow]
 
-> **Note:** You only need to log in once every 6 months. If your session expires, the extension will prompt you to log in again.
+### 4. Enable Debug Logging (Critical)
+For the extension to capture your interactions, **GitHub Copilot Chat must be in Debug mode**.
 
-### 4. Start Coding!
-The extension works automatically in the background.
+1.  Open Command Palette.
+2.  Run: **`Copilot Archiver: Enable Copilot Debug Logging`**.
+3.  A modal will appear explaining the steps. Click **Open Menu**.
+4.  In the menu that appears at the top:
+    - Select **"GitHub Copilot Chat"** (Make sure it is exactly this name, not just "GitHub Copilot").
+    - Click the **Double Checkmark (Set as Default)** icon next to "Debug".
 
-*   **Chat**: Open GitHub Copilot Chat and interact as usual.
-*   **Snapshots**: The extension captures the state of your code *before* you ask a question and *after* Copilot generates a solution.
-*   **Data**: Snapshots are uploaded securely in the background.
+![Placeholder: GIF showing how to select GitHub Copilot Chat and set Log Level to Debug]
+
+> **Why?** Without this, we cannot see the detailed "Thought Process" or "Code Edits" from Copilot.
+
+### 5. Coding
+- Work as normal.
+- The status bar item `$(check) Archiver: <YourID>` indicates everything is working.
+- Click the status bar item to open the **Archiver Menu**.
 
 ---
 
-## Troubleshooting
+## Data Privacy & Storage
+Your data is stored securely:
+- **Local**: Inside `.snapshots/` in your workspace (safe to delete if needed, but useful for verification).
+- **Cloud**: Uploaded to a private, secure S3 bucket managed by the course staff.
 
-### "You are not logged in" Error
-If you see an error message saying "Snapshots are not being uploaded", simply run the **`Copilot Archiver: Login`** command again.
+---
 
-### Where is my data?
-Your data is stored in two places:
-1.  **Locally**: In your workspace under the `.snapshots` folder.
-2.  **Server**: Securely uploaded to our server (S3) automatically.
+## Build from Source (Advanced)
+If you need to build the extension yourself:
+1.  Clone repo: `git clone ...`
+2.  `npm install`
+3.  `npm run compile`
+4.  `vsce package`
