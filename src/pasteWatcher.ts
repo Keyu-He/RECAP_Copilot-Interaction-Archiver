@@ -77,12 +77,6 @@ export class PasteWatcher {
     }
 
     private async logPasteEvent(workspacePath: string, event: any) {
-        // We'll store these in a specialized log file in the .snapshots directory
-        // We can reuse SnapshotManager's output path config if public, but for now let's manually write
-        // to ensure we don't break the snapshot logic.
-        // Better yet: Ask SnapshotManager to do it?
-        // For speed, let's write to .snapshots/_paste_events.jsonl (line separated JSON)
-
         try {
             const config = vscode.workspace.getConfiguration('copilotArchiver');
             const outputPath = config.get<string>('outputPath', '.snapshots');
