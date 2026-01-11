@@ -25,5 +25,3 @@ export const SNAPSHOT_BLACKLIST_PATTERNS = [
 ];
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-
-// SNAPSHOT_WHITELIST_EXTENSIONS removed as we switched to blacklist + size limit strategy
