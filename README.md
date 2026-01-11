@@ -16,11 +16,13 @@
 3.  Go to Extensions -> `...` (Views and More Actions) -> **Install from VSIX...**
 4.  Select the file.
 
+![Placeholder: Video/GIF of Installing Copilot Chat and Archiver]
+
 ### 2. Activation for Workspace
 When you open a folder/workspace for the first time, you will see a notification:
 > "Enable Copilot Interaction Archiver for this workspace?"
 
-![Placeholder: Screenshot of the Enable Workspace Modal Prompt]
+![Placeholder: Video/GIF of the Enable Workspace Modal Prompt]
 
 1.  Click **Yes**.
 2.  This ensures the archiver only runs on approved homework assignments.
@@ -35,7 +37,7 @@ When you open a folder/workspace for the first time, you will see a notification
 3.  Enter your **Andrew ID**.
 4.  Enter the **Class Password**.
 
-![Placeholder: GIF of the Login Flow]
+![Placeholder: Video/GIF of the Login Flow]
 
 ### 4. Enable Debug Logging (Critical)
 For the extension to capture your interactions, **GitHub Copilot Chat must be in Debug mode**.
@@ -47,14 +49,16 @@ For the extension to capture your interactions, **GitHub Copilot Chat must be in
     - Select **"GitHub Copilot Chat"** (Make sure it is exactly this name, not just "GitHub Copilot").
     - Click the **Double Checkmark (Set as Default)** icon next to "Debug".
 
-![Placeholder: GIF showing how to select GitHub Copilot Chat and set Log Level to Debug]
+![Placeholder: Video/GIF showing how to select GitHub Copilot Chat and set Log Level to Debug]
 
 > **Why?** Without this, we cannot see the detailed "Thought Process" or "Code Edits" from Copilot.
 
-### 5. Coding
+### 5. Coding & Verification
 - Work as normal.
 - The status bar item `$(check) Archiver: <YourID>` indicates everything is working.
 - Click the status bar item to open the **Archiver Menu**.
+
+![Placeholder: Video/GIF of verifying status bar and menu]
 
 ---
 

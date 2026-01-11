@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import { Logger } from './logger';
-import { SNAPSHOT_BLACKLIST_PATTERNS, SNAPSHOT_WHITELIST_EXTENSIONS } from './constants';
+import { SNAPSHOT_BLACKLIST_PATTERNS, MAX_FILE_SIZE_BYTES } from './constants';
 
 interface SnapshotMetadata {
     turn_index: number;
@@ -84,13 +84,8 @@ export class SnapshotManager {
                 fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            // Construct Glob Pattern from Whitelist
-            // Format: "**/*.{ts,js,py,...}"
-            const extensions = SNAPSHOT_WHITELIST_EXTENSIONS.map(ext => ext.replace(/^\./, '')).join(',');
-            const globPattern = `**/*.{${extensions}}`;
-
-            Logger.info(`Using search glob: ${globPattern}`);
-            const files = await vscode.workspace.findFiles(globPattern, '**/node_modules/**');
+            Logger.info(`Scanning workspace for files...`);
+            const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
 
             for (const file of files) {
                 const relativePath = vscode.workspace.asRelativePath(file);
@@ -100,6 +95,24 @@ export class SnapshotManager {
                 const isBlacklisted = segments.some(s => s.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(s));
 
                 if (isBlacklisted) {
+                    continue;
+                }
+
+                // Check File extension against blacklist patterns directly
+                const ext = path.extname(file.fsPath).toLowerCase();
+                if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
+                    continue;
+                }
+
+                // Check File Size
+                try {
+                    const stats = fs.statSync(file.fsPath);
+                    if (stats.size > MAX_FILE_SIZE_BYTES) {
+                        Logger.warn(`Skipping large file: ${relativePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+                        continue;
+                    }
+                } catch (statErr) {
+                    Logger.warn(`Could not stat file ${relativePath}: ${statErr}`);
                     continue;
                 }
 
@@ -192,11 +205,24 @@ export class SnapshotManager {
                 if (entry.isDirectory()) {
                     walk(fullPath);
                 } else {
-                    // File Whitelist Check
+                    // File Check
                     const ext = path.extname(entry.name).toLowerCase();
-                    if (SNAPSHOT_WHITELIST_EXTENSIONS.includes(ext)) {
-                        files.push(fullPath);
+                    if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
+                        continue;
                     }
+
+                    // Size Check
+                    try {
+                        const stats = fs.statSync(fullPath);
+                        if (stats.size > MAX_FILE_SIZE_BYTES) {
+                            Logger.warn(`Skipping large file in upload: ${entry.name} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+                            continue;
+                        }
+                    } catch (e) {
+                        continue;
+                    }
+
+                    files.push(fullPath);
                 }
             }
         };
