@@ -11,33 +11,19 @@ export const SNAPSHOT_BLACKLIST_PATTERNS = [
     'coverage',
     '.vscode',
     '.idea',
-    '.vs'
+    '.vs',
+    // Large binary / model weights extensions
+    '.pth', '.pt', '.bin', '.ckpt', '.safetensors',
+    '.h5', '.onnx', '.tflite', '.keras',
+    '.tar', '.gz', '.zip', '.7z', '.rar',
+    '.iso', '.dmg', '.exe', '.dll', '.so', '.dylib',
+    '.mp4', '.mov', '.avi', '.mkv',
+    '.mp3', '.wav', '.flac',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.ico', '.svg', // Images can be large or numerous
+    '.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
+    '.db', '.sqlite', '.sqlite3'
 ];
 
-// If a file matches the blacklist patterns (folder or filename), it is excluded FIRST.
-// Then, if it passes blacklist, it must have an extension in the whitelist.
+export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
 
-export const SNAPSHOT_WHITELIST_EXTENSIONS = [
-    // Web / JS
-    '.ts', '.tsx', '.js', '.jsx', '.json', '.html', '.css', '.scss', '.less',
-    // Python
-    '.py', '.ipynb',
-    // C/C++
-    '.c', '.cpp', '.h', '.hpp', '.cc',
-    // Java/Kotlin
-    '.java', '.kt',
-    // Go
-    '.go',
-    // Rust
-    '.rs',
-    // Ruby
-    '.rb',
-    // PHP
-    '.php',
-    // Shell
-    '.sh', '.bash', '.zsh',
-    // Config/Data
-    '.xml', '.yaml', '.yml', '.toml', '.ini', '.md', '.txt',
-    // C#
-    '.cs'
-];
+// SNAPSHOT_WHITELIST_EXTENSIONS removed as we switched to blacklist + size limit strategy
