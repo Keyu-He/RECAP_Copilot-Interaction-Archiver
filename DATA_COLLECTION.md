@@ -7,9 +7,9 @@ Student data is securely stored in your configured S3 bucket with the following 
 ```
 s3://<bucket-name>/
     <userId>/
-        repo_snapshots/
+        interaction_snapshots/
             <timestamp>/
-                repo/              <-- User files here
+                repo/              <-- User files (only if manual capture)
                 ccreq.md
                 _meta.json
         <chatId>/
@@ -73,9 +73,9 @@ After downloading, you will find:
 downloaded_snapshots/
   <student_andrew_id>/
     copilot_snapshots/
-        repo_snapshots/
+        interaction_snapshots/
             <timestamp1>/
-                repo/                    <-- User source code
+                repo/                    <-- User source code (manual only)
                 ccreq.md                 <-- Request context (if available)
                 _meta.json               <-- Metadata
             <timestamp2>/...
