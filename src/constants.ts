@@ -24,4 +24,4 @@ export const SNAPSHOT_BLACKLIST_PATTERNS = [
     '.db', '.sqlite', '.sqlite3'
 ];
 
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
