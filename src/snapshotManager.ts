@@ -255,7 +255,7 @@ export class SnapshotManager {
                     return this.s3Uploader.uploadFile(file, s3Key);
                 }));
             }
-            Logger.info(`Upload complete for ${dirPath}`);
+            // Logger.info(`Upload complete for ${dirPath}`);
         } catch (err) {
             Logger.error(`Error uploading directory ${dirPath}: ${err}`);
         }
