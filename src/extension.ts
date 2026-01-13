@@ -254,14 +254,25 @@ export async function activate(context: vscode.ExtensionContext) {
         await shadowGitManager.handleFileSave(doc);
     }));
 
-    // Periodic Sync (Every 1 minute)
-    const SYNC_INTERVAL_MS = 1 * 60 * 1000;
-    const syncTimer = setInterval(async () => {
-        await shadowGitManager.syncToS3();
-    }, SYNC_INTERVAL_MS);
+    // Listen for Delete Events
+    context.subscriptions.push(vscode.workspace.onDidDeleteFiles(async (event) => {
+        await shadowGitManager.handleFileDelete(event);
+    }));
 
-    context.subscriptions.push({ dispose: () => clearInterval(syncTimer) });
+    // Listen for Create Events
+    context.subscriptions.push(vscode.workspace.onDidCreateFiles(async (event) => {
+        await shadowGitManager.handleFileCreate(event);
+    }));
 
+    // Listen for Rename Events
+    context.subscriptions.push(vscode.workspace.onDidRenameFiles(async (event) => {
+        await shadowGitManager.handleFileRename(event);
+    }));
+
+    // Listen for Text Changes (Dirty Capture)
+    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(async (event) => {
+        await shadowGitManager.handleFileChange(event.document);
+    }));
 
     context.subscriptions.push(vscode.commands.registerCommand('copilotArchiver.captureNow', async () => {
         const timestamp = new Date().toISOString();
@@ -269,8 +280,8 @@ export async function activate(context: vscode.ExtensionContext) {
         // Manual capture: Include Repo Files = true
         await snapshotManager.captureRepoSnapshot(timestamp, undefined, true);
 
-        // Also trigger Shadow Git Sync
-        await shadowGitManager.syncToS3();
+        // Also trigger Shadow Git Sync (Force=true)
+        await shadowGitManager.syncToS3(true);
 
         vscode.window.showInformationMessage('Copilot Archiver: Manual Snapshot Captured & Shadow Git Synced.');
     }));
