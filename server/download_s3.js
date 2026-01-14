@@ -21,10 +21,11 @@ const downloadDir = path.join(__dirname, '..', 'downloaded_snapshots');
 const CONCURRENCY_LIMIT = 100;
 
 // Async generator to yield items one by one from S3 pagination
+// Async generator to yield items one by one from S3 pagination
 async function* listObjectsGenerator() {
     let continuationToken = undefined;
 
-    console.log(`Listing objects in bucket ${config.bucket} with prefix '${config.prefix}'...`);
+    // console.log(`Listing objects in bucket ${config.bucket} with prefix '${config.prefix}'...`);
 
     do {
         const command = new ListObjectsV2Command({
@@ -47,10 +48,39 @@ async function* listObjectsGenerator() {
     } while (continuationToken);
 }
 
+async function countTotalFiles() {
+    console.log(`Calculating total files in bucket ${config.bucket}...`);
+    let count = 0;
+    let continuationToken = undefined;
+
+    do {
+        const command = new ListObjectsV2Command({
+            Bucket: config.bucket,
+            Prefix: config.prefix,
+            ContinuationToken: continuationToken
+        });
+        const response = await client.send(command);
+        if (response.Contents) {
+            count += response.Contents.filter(item => !item.Key.endsWith('/')).length;
+        }
+        continuationToken = response.NextContinuationToken;
+        process.stdout.write(`\rFound ${count} files...`);
+    } while (continuationToken);
+
+    console.log(`\nTotal files to download: ${count}`);
+    return count;
+}
+
 async function downloadS3Folder() {
     try {
         if (!process.env.AWS_ACCESS_KEY_ID) {
             throw new Error("AWS Credentials missing in .env");
+        }
+
+        const totalFiles = await countTotalFiles();
+        if (totalFiles === 0) {
+            console.log("No files found.");
+            return;
         }
 
         console.log(`Starting download with concurrency ${CONCURRENCY_LIMIT}...`);
@@ -84,9 +114,8 @@ async function downloadS3Folder() {
                     await pipeline(getResponse.Body, fs.createWriteStream(localPath));
 
                     completedCount++;
-                    if (completedCount % 10 === 0) {
-                        process.stdout.write(`\rFiles Downloaded: ${completedCount} (Active: ${activeDownloads.size})`);
-                    }
+                    const percent = ((completedCount / totalFiles) * 100).toFixed(1);
+                    process.stdout.write(`\rProgress: ${completedCount}/${totalFiles} (${percent}%) | Active: ${activeDownloads.size}   `);
                 } catch (e) {
                     console.error(`\nFailed to download ${item.Key}:`, e.message);
                 }
