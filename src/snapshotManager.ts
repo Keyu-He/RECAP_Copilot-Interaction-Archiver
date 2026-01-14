@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 
 import { Logger } from './logger';
 import { SNAPSHOT_BLACKLIST_PATTERNS, MAX_FILE_SIZE_BYTES } from './constants';
+import { S3Uploader } from './s3Uploader';
 
 interface SnapshotMetadata {
     turn_index: number;
@@ -26,9 +27,11 @@ export class SnapshotManager {
     private outputPath: string;
 
     private secretStorage: vscode.SecretStorage;
+    private s3Uploader: S3Uploader;
 
     constructor(secretStorage: vscode.SecretStorage) {
         this.secretStorage = secretStorage;
+        this.s3Uploader = new S3Uploader(secretStorage);
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         this.excludePatterns = config.get<string[]>('excludePatterns', [
             '.git',
@@ -46,7 +49,7 @@ export class SnapshotManager {
         return this.outputPath;
     }
 
-    async captureRepoSnapshot(timestamp?: string, ccreqPath?: string): Promise<void> {
+    async captureRepoSnapshot(timestamp?: string, ccreqPath?: string, includeRepoFiles: boolean = false): Promise<void> {
         let tempDir = '';
         let isEphemeral = false;
         let interactionType: string | undefined;
@@ -69,14 +72,14 @@ export class SnapshotManager {
             const dirTimestamp = (timestamp || currTimestamp).replace(/:/g, '_');
 
             if (storeLocally) {
-                tempDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', dirTimestamp);
+                tempDir = path.join(workspacePath, this.outputPath, 'interaction_snapshots', dirTimestamp);
             } else {
                 // Use system temp directory
                 const os = require('os');
                 const uuid = require('crypto').randomUUID(); // Node 14+ / VSCode built-in
                 // Sanitize timestamp for directory name
                 const dirTimestamp = (timestamp || currTimestamp).replace(/:/g, '_');
-                tempDir = path.join(os.tmpdir(), 'copilot-archiver', 'repo_snapshots', `${dirTimestamp}-${uuid}`);
+                tempDir = path.join(os.tmpdir(), 'copilot-archiver', 'interaction_snapshots', `${dirTimestamp}-${uuid}`);
                 isEphemeral = true;
             }
 
@@ -84,48 +87,52 @@ export class SnapshotManager {
                 fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            Logger.info(`Scanning workspace for files...`);
-            const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+            if (includeRepoFiles) {
+                Logger.info(`Scanning workspace for files...`);
+                const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
 
-            for (const file of files) {
-                const relativePath = vscode.workspace.asRelativePath(file);
-                // Check Blacklist
-                const segments = relativePath.split(/[/\\]/);
-                // Exclude if any segment starts with '.' OR matches a blacklist item perfectly
-                const isBlacklisted = segments.some(s => s.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(s));
+                for (const file of files) {
+                    const relativePath = vscode.workspace.asRelativePath(file);
+                    // Check Blacklist
+                    const segments = relativePath.split(/[/\\]/);
+                    // Exclude if any segment starts with '.' OR matches a blacklist item perfectly
+                    const isBlacklisted = segments.some(s => s.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(s));
 
-                if (isBlacklisted) {
-                    continue;
-                }
-
-                // Check File extension against blacklist patterns directly
-                const ext = path.extname(file.fsPath).toLowerCase();
-                if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
-                    continue;
-                }
-
-                // Check File Size
-                try {
-                    const stats = fs.statSync(file.fsPath);
-                    if (stats.size > MAX_FILE_SIZE_BYTES) {
-                        Logger.warn(`Skipping large file: ${relativePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+                    if (isBlacklisted) {
                         continue;
                     }
-                } catch (statErr) {
-                    Logger.warn(`Could not stat file ${relativePath}: ${statErr}`);
-                    continue;
+
+                    // Check File extension against blacklist patterns directly
+                    const ext = path.extname(file.fsPath).toLowerCase();
+                    if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
+                        continue;
+                    }
+
+                    // Check File Size
+                    try {
+                        const stats = fs.statSync(file.fsPath);
+                        if (stats.size > MAX_FILE_SIZE_BYTES) {
+                            Logger.warn(`Skipping large file: ${relativePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+                            continue;
+                        }
+                    } catch (statErr) {
+                        Logger.warn(`Could not stat file ${relativePath}: ${statErr}`);
+                        continue;
+                    }
+
+                    const sourcePath = file.fsPath;
+                    // Move user files into 'repo' subdirectory to avoid collision with metadata
+                    const destPath = path.join(tempDir, 'repo', relativePath);
+
+                    const destFileDir = path.dirname(destPath);
+                    if (!fs.existsSync(destFileDir)) {
+                        fs.mkdirSync(destFileDir, { recursive: true });
+                    }
+
+                    fs.copyFileSync(sourcePath, destPath);
                 }
-
-                const sourcePath = file.fsPath;
-                // Move user files into 'repo' subdirectory to avoid collision with metadata
-                const destPath = path.join(tempDir, 'repo', relativePath);
-
-                const destFileDir = path.dirname(destPath);
-                if (!fs.existsSync(destFileDir)) {
-                    fs.mkdirSync(destFileDir, { recursive: true });
-                }
-
-                fs.copyFileSync(sourcePath, destPath);
+            } else {
+                Logger.debug(`Skipping full repo copy (includeRepoFiles=false). Only metadata will be saved.`);
             }
 
             if (ccreqPath) {
@@ -164,7 +171,7 @@ export class SnapshotManager {
             // Upload the snapshot to S3 immediately
             if (config.get<boolean>('s3.enabled', false)) {
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-                const s3Key = `${s3FolderPrefix}/repo_snapshots/${timestamp || currTimestamp}`;
+                const s3Key = `${s3FolderPrefix}/interaction_snapshots/${timestamp || currTimestamp}`;
 
                 Logger.info(`Uploading snapshot ${timestamp || currTimestamp} to S3...`);
                 await this.uploadDirectory(tempDir, s3Key);
@@ -245,82 +252,14 @@ export class SnapshotManager {
                         return Promise.resolve();
                     }
 
-                    return this.uploadToS3(file, s3Key);
+                    return this.s3Uploader.uploadFile(file, s3Key);
                 }));
             }
-            Logger.info(`Upload complete for ${dirPath}`);
+            // Logger.info(`Upload complete for ${dirPath}`);
         } catch (err) {
             Logger.error(`Error uploading directory ${dirPath}: ${err}`);
         }
     }
-
-    private async uploadToS3(filePath: string, key: string): Promise<void> {
-        const config = vscode.workspace.getConfiguration('copilotArchiver');
-        const backendUrl = config.get<string>('backendUrl');
-
-        if (!backendUrl) return;
-
-        try {
-            // Get JWT Token
-            const token = await this.secretStorage.get('archiver.jwt');
-            if (!token) {
-                Logger.warn("Upload skipped: No Login Token found.");
-                const selection = await vscode.window.showErrorMessage(
-                    "Copilot Archiver: You are not logged in. Snapshots are not being uploaded.",
-                    "Login"
-                );
-                if (selection === "Login") {
-                    vscode.commands.executeCommand('copilotArchiver.login');
-                }
-                return;
-            }
-
-            // 1. Get Presigned URL
-            const response = await fetch(`${backendUrl}/sign-upload`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ key })
-            });
-
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    await this.secretStorage.delete('archiver.jwt');
-                    const selection = await vscode.window.showErrorMessage(
-                        "Copilot Archiver: Login session expired. Please login again.",
-                        "Login"
-                    );
-                    if (selection === "Login") {
-                        vscode.commands.executeCommand('copilotArchiver.login');
-                    }
-                    return;
-                }
-                throw new Error(`Backend returned ${response.status}: ${response.statusText}`);
-            }
-
-            const data = await response.json() as { uploadUrl: string };
-            const uploadUrl = data.uploadUrl;
-
-            // 2. Upload to S3
-            const fileContent = fs.readFileSync(filePath);
-            const uploadResponse = await fetch(uploadUrl, {
-                method: 'PUT',
-                body: fileContent
-            });
-
-            if (!uploadResponse.ok) {
-                throw new Error(`S3 Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
-            }
-
-        } catch (err) {
-            Logger.error(`Error uploading to S3 via Backend: ${err}`);
-            // Still throw to indicate failure.
-            throw err;
-        }
-    }
-
 
     private shouldExclude(filePath: string, workspaceRoot: string): boolean {
         const relativePath = path.relative(workspaceRoot, filePath);
@@ -354,10 +293,10 @@ export class SnapshotManager {
             const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
             if (!workspacePath) return;
 
-            // Local Path: .snapshots/repo_snapshots/<timestamp>
+            // Local Path: .snapshots/interaction_snapshots/<timestamp>
             // Sanitize timestamp (replace : with _) to match file system
             const safeTimestamp = timestamp.replace(/:/g, '_');
-            const localSnapshotDir = path.join(workspacePath, this.outputPath, 'repo_snapshots', safeTimestamp);
+            const localSnapshotDir = path.join(workspacePath, this.outputPath, 'interaction_snapshots', safeTimestamp);
 
             if (!fs.existsSync(localSnapshotDir)) {
                 Logger.warn(`archiveRepoSnapshot: Snapshot for timestamp ${timestamp} not found at ${localSnapshotDir}`);
@@ -367,9 +306,9 @@ export class SnapshotManager {
             // Upload Logic
             const config = vscode.workspace.getConfiguration('copilotArchiver');
             if (config.get<boolean>('s3.enabled', false)) {
-                // S3 Path: <prefix>/<chatId>/repo_snapshots/<timestamp>
+                // S3 Path: <prefix>/<chatId>/interaction_snapshots/<timestamp>
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-                const s3Key = `${s3FolderPrefix}/${chatId}/repo_snapshots/${timestamp}`;
+                const s3Key = `${s3FolderPrefix}/${chatId}/interaction_snapshots/${timestamp}`;
 
                 Logger.info(`Archiving snapshot ${timestamp} to S3 for chat ${chatId}`);
                 await this.uploadDirectory(localSnapshotDir, s3Key);
@@ -433,11 +372,12 @@ export class SnapshotManager {
 
                 // Upload chat_session.json
                 const sessionS3Key = `${s3FolderPrefix}/${chatId}/chat_session.json`;
-                uploadPromises.push(this.uploadToS3(sessionFilePath, sessionS3Key).catch(e => Logger.error(`Session file upload failed: ${e}`)));
+                // Use s3Uploader instead of uploadToS3
+                uploadPromises.push(this.s3Uploader.uploadFile(sessionFilePath, sessionS3Key).catch(e => Logger.error(`Session file upload failed: ${e}`)));
 
                 // Upload metadata.json
                 const metaS3Key = `${s3FolderPrefix}/${chatId}/metadata.json`;
-                uploadPromises.push(this.uploadToS3(metaFilePath, metaS3Key).catch(e => Logger.error(`Metadata file upload failed: ${e}`)));
+                uploadPromises.push(this.s3Uploader.uploadFile(metaFilePath, metaS3Key).catch(e => Logger.error(`Metadata file upload failed: ${e}`)));
 
                 // If ephemeral, await the uploads to ensure they complete before cleanup
                 if (isEphemeral) {

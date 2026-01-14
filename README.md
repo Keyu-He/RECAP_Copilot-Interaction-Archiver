@@ -11,67 +11,68 @@
 ## Usage Guide
 
 ### 1. Installation
-1.  Obtain the `.vsix` file from your instructor or build it from source (see below).
-2.  Open VS Code.
-3.  Go to Extensions -> `...` (Views and More Actions) -> **Install from VSIX...**
-4.  Select the file.
+1.  Click the **Extensions** icon in the left sidebar.
+2.  Search for and install the **GitHub Copilot Chat** extension from the VS Code Marketplace.
+3.  Search for and install the **Copilot Interaction Archiver** extension from the VS Code Marketplace.
+4.  Reload the window. You can do this by `Cmd+Shift+P` / `Ctrl+Shift+P` and typing "Developer: Reload Window"; alternatively, you can just quit VS Code (`Cmd+Q` / `Alt+F4`) and reopen it.
 
-![Placeholder: Video/GIF of Installing Copilot Chat and Archiver]
+![Marketplace Install](assets/img/marketplace_install.gif)
 
 ### 2. Activation for Workspace
 When you open a folder/workspace for the first time, you will see a notification:
 > "Enable Copilot Interaction Archiver for this workspace?"
 
-![Placeholder: Video/GIF of the Enable Workspace Modal Prompt]
+![Enable Workspace](assets/img/extension_activation.png)
 
 1.  Click **Yes**.
-2.  This ensures the archiver only runs on approved homework assignments.
+2.  This ensures the archiver only runs on course-related projects.
 
 *If you missed the prompt or need to re-enable it:*
 - Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
 - Run: **`Copilot Archiver: Enable for this Workspace`**.
 
 ### 3. Log In
-1.  Open Command Palette.
+1.  Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
 2.  Run: **`Copilot Archiver: Login`**.
 3.  Enter your **Andrew ID**.
 4.  Enter the **Class Password**.
 
-![Placeholder: Video/GIF of the Login Flow]
+![Login Flow](assets/img/login.gif)
 
-### 4. Enable Debug Logging (Critical)
-For the extension to capture your interactions, **GitHub Copilot Chat must be in Debug mode**.
+### 4. Enable Debug Logging
+For the extension to better capture the interactions, **GitHub Copilot Chat should be in Debug mode**.
 
-1.  Open Command Palette.
+1.  Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
 2.  Run: **`Copilot Archiver: Enable Copilot Debug Logging`**.
 3.  A modal will appear explaining the steps. Click **Open Menu**.
 4.  In the menu that appears at the top:
-    - Select **"GitHub Copilot Chat"** (Make sure it is exactly this name, not just "GitHub Copilot").
-    - Click the **Double Checkmark (Set as Default)** icon next to "Debug".
+    - Select **"GitHub Copilot Chat"**.
+    - Click the **Double Checkmark (Set as Default)** icon next to "**Debug**".
 
-![Placeholder: Video/GIF showing how to select GitHub Copilot Chat and set Log Level to Debug]
-
-> **Why?** Without this, we cannot see the detailed "Thought Process" or "Code Edits" from Copilot.
+![Enable Debug Logging](assets/img/enable_debug_logging.gif)
 
 ### 5. Coding & Verification
-- Work as normal.
-- The status bar item `$(check) Archiver: <YourID>` indicates everything is working.
-- Click the status bar item to open the **Archiver Menu**.
+- If you see the status bar item `$(⎷) Archiver: <YourID>`, everything is working!
+- You can start coding on your homeworks as normal.
 
-![Placeholder: Video/GIF of verifying status bar and menu]
+> [!TIP] To use the **Copilot Chat**, click the ``Toggle Chat`` button near the search bar on the top of the editor. This will open the chat panel. 
+
+> [!TIP] Every time you open a new workspace, the extension will ask you if you want to enable it. Select **Yes** for course projects.
+
+![Verifying Status Bar](assets/img/status_bar_menu.gif)
+
+### 6. Final Snapshot
+- When you are ready to turn in your assignment, please open the **Archiver Menu** (click the status bar item) and select **Capture Repo Snapshot**.
+
+> [!WARNING]
+> This uploads your code for **research data collection only**. You must still submit your homework for grading according to the course instructions.
+
 
 ---
 
 ## Data Privacy & Storage
 Your data is stored securely:
-- **Local**: Inside `.snapshots/` in your workspace (safe to delete if needed, but useful for verification).
+- **Local**: Inside `.snapshots/` and `.archiver_shadow/` in your workspace
+> [!WARNING]
+> Please do not move / delete files in these two folders. They are necessary for tracking your interactions.
 - **Cloud**: Uploaded to a private, secure S3 bucket managed by the course staff.
-
----
-
-## Build from Source (Advanced)
-If you need to build the extension yourself:
-1.  Clone repo: `git clone ...`
-2.  `npm install`
-3.  `npm run compile`
-4.  `vsce package`

@@ -4,6 +4,7 @@ import { ChatSessionWatcher } from './chatSessionWatcher';
 import { Logger } from './logger';
 import { PasteWatcher } from './pasteWatcher';
 import { LogWatcher } from './logWatcher';
+import { ShadowGitManager } from './shadowGitManager';
 
 // Helper for Hashing (or not)
 function computeBackendId(rawId: string): string {
@@ -245,11 +246,44 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(pasteWatcher);
     context.subscriptions.push(logWatcher);
 
+    // Initialize Shadow Git Manager
+    const shadowGitManager = new ShadowGitManager(context);
+
+    // Listen for Save Events
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(async (doc) => {
+        await shadowGitManager.handleFileSave(doc);
+    }));
+
+    // Listen for Delete Events
+    context.subscriptions.push(vscode.workspace.onDidDeleteFiles(async (event) => {
+        await shadowGitManager.handleFileDelete(event);
+    }));
+
+    // Listen for Create Events
+    context.subscriptions.push(vscode.workspace.onDidCreateFiles(async (event) => {
+        await shadowGitManager.handleFileCreate(event);
+    }));
+
+    // Listen for Rename Events
+    context.subscriptions.push(vscode.workspace.onDidRenameFiles(async (event) => {
+        await shadowGitManager.handleFileRename(event);
+    }));
+
+    // Listen for Text Changes (Dirty Capture)
+    context.subscriptions.push(vscode.workspace.onDidChangeTextDocument(async (event) => {
+        await shadowGitManager.handleFileChange(event.document);
+    }));
+
     context.subscriptions.push(vscode.commands.registerCommand('copilotArchiver.captureNow', async () => {
         const timestamp = new Date().toISOString();
         Logger.info(`Manual snapshot trigger at ${timestamp}`);
-        await snapshotManager.captureRepoSnapshot(timestamp);
-        vscode.window.showInformationMessage('Copilot Archiver: Manual Snapshot Captured.');
+        // Manual capture: Include Repo Files = true
+        await snapshotManager.captureRepoSnapshot(timestamp, undefined, true);
+
+        // Also trigger Shadow Git Sync (Force=true)
+        await shadowGitManager.syncToS3(true);
+
+        vscode.window.showInformationMessage('Copilot Archiver: Manual Snapshot Captured & Shadow Git Synced.');
     }));
 
     // Register Login Command
