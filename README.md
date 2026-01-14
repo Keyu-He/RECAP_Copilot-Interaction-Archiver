@@ -16,13 +16,15 @@
 3.  Search for and install the **Copilot Interaction Archiver** extension from the VS Code Marketplace.
 4.  Reload the window. You can do this by `Cmd+Shift+P` / `Ctrl+Shift+P` and typing "Developer: Reload Window"; alternatively, you can just quit VS Code (`Cmd+Q` / `Alt+F4`) and reopen it.
 
-![Marketplace Install](assets/img/marketplace_install.gif)
+<!-- ![Marketplace Install](assets/img/marketplace_install.gif) -->
+![Marketplace Install](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/marketplace_install.gif)
 
 ### 2. Activation for Workspace
 When you open a folder/workspace for the first time, you will see a notification:
 > "Enable Copilot Interaction Archiver for this workspace?"
 
-![Enable Workspace](assets/img/extension_activation.png)
+<!-- ![Enable Workspace](assets/img/extension_activation.png) -->
+![Enable Workspace](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/extension_activation.png)
 
 1.  Click **Yes**.
 2.  This ensures the archiver only runs on course-related projects.
@@ -37,7 +39,8 @@ When you open a folder/workspace for the first time, you will see a notification
 3.  Enter your **Andrew ID**.
 4.  Enter the **Class Password**.
 
-![Login Flow](assets/img/login.gif)
+<!-- ![Login Flow](assets/img/login.gif) -->
+![Login Flow](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/login.gif)
 
 ### 4. Enable Debug Logging
 For the extension to better capture the interactions, **GitHub Copilot Chat should be in Debug mode**.
@@ -49,7 +52,8 @@ For the extension to better capture the interactions, **GitHub Copilot Chat shou
     - Select **"GitHub Copilot Chat"**.
     - Click the **Double Checkmark (Set as Default)** icon next to "**Debug**".
 
-![Enable Debug Logging](assets/img/enable_debug_logging.gif)
+<!-- ![Enable Debug Logging](assets/img/enable_debug_logging.gif) -->
+![Enable Debug Logging](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/enable_debug_logging.gif)
 
 ### 5. Coding & Verification
 - If you see the status bar item `$(⎷) Archiver: <YourID>`, everything is working!
@@ -59,7 +63,8 @@ For the extension to better capture the interactions, **GitHub Copilot Chat shou
 
 > [!TIP] Every time you open a new workspace, the extension will ask you if you want to enable it. Select **Yes** for course projects.
 
-![Verifying Status Bar](assets/img/status_bar_menu.gif)
+<!-- ![Verifying Status Bar](assets/img/status_bar_menu.gif) -->
+![Verifying Status Bar](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/status_bar_menu.gif)
 
 ### 6. Final Snapshot
 - When you are ready to turn in your assignment, please open the **Archiver Menu** (click the status bar item) and select **Capture Repo Snapshot**.
