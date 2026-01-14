@@ -9,12 +9,15 @@ s3://<bucket-name>/
     <userId>/
         interaction_snapshots/
             <timestamp>/
-                repo/              <-- User files (only if manual capture)
-                ccreq.md
-                _meta.json
+                repo/               <-- User files (only if manual capture)
+                ccreq.md            <-- Code Request context (made by agent, if available)
+                _meta.json       
         <chatId>/
-            metadata.json
-            chat_session.json
+            metadata.json           <-- Metadata (e.g. workspace path)
+            chat_session.json       <-- Full chat history
+        <workspace_name>/
+            shadow_git.bundle       <-- Shadow Git bundle to track file modifications
+            history_<timestamp>.bundle  <-- Autosaved checkpoints of the Shadow Git bundle (e.g. every day)
 ```
 
 We provide a utility script (`server/download_s3.js`) to download and organize this data locally.
@@ -71,15 +74,16 @@ After downloading, you will find:
 
 ```
 downloaded_snapshots/
-  <student_andrew_id>/
-    copilot_snapshots/
-        interaction_snapshots/
-            <timestamp1>/
-                repo/                    <-- User source code (manual only)
-                ccreq.md                 <-- Request context (if available)
-                _meta.json               <-- Metadata
-            <timestamp2>/...
-        <chat_session_id>/
-            metadata.json                <-- Metadata for the chat session (e.g. workspace path)
-            chat_session.json            <-- Full chat history
+  <hashed__id>/
+    interaction_snapshots/
+        <timestamp>/
+            repo/                   <-- User files (only if manual capture)
+            ccreq.md                <-- Code Request context (made by agent, if available)
+            _meta.json              
+        <chatId>/
+            metadata.json           <-- Metadata (e.g. workspace path)
+            chat_session.json       <-- Full chat history
+        <workspace_name>/
+            shadow_git.bundle       <-- Shadow Git bundle to track file modifications
+            history_<timestamp>.bundle  <-- Autosaved checkpoints of the Shadow Git bundle (e.g. every day)
 ```
