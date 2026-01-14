@@ -18,7 +18,34 @@ const config = {
 const client = new S3Client(config);
 const downloadDir = path.join(__dirname, '..', 'downloaded_snapshots');
 
-const CONCURRENCY_LIMIT = 50;
+const CONCURRENCY_LIMIT = 100;
+
+// Async generator to yield items one by one from S3 pagination
+async function* listObjectsGenerator() {
+    let continuationToken = undefined;
+
+    console.log(`Listing objects in bucket ${config.bucket} with prefix '${config.prefix}'...`);
+
+    do {
+        const command = new ListObjectsV2Command({
+            Bucket: config.bucket,
+            Prefix: config.prefix,
+            ContinuationToken: continuationToken
+        });
+
+        const response = await client.send(command);
+
+        if (response.Contents) {
+            for (const item of response.Contents) {
+                if (!item.Key.endsWith('/')) {
+                    yield item;
+                }
+            }
+        }
+
+        continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+}
 
 async function downloadS3Folder() {
     try {
@@ -26,59 +53,28 @@ async function downloadS3Folder() {
             throw new Error("AWS Credentials missing in .env");
         }
 
-        console.log(`Listing objects in bucket ${config.bucket} with prefix '${config.prefix}'...`);
+        console.log(`Starting download with concurrency ${CONCURRENCY_LIMIT}...`);
 
-        let continuationToken = undefined;
-        let allItems = [];
+        let completedCount = 0;
+        const activeDownloads = new Set();
 
-        // 1. List all objects first
-        do {
-            const command = new ListObjectsV2Command({
-                Bucket: config.bucket,
-                Prefix: config.prefix,
-                ContinuationToken: continuationToken
-            });
-
-            const response = await client.send(command);
-
-            if (response.Contents) {
-                for (const item of response.Contents) {
-                    if (!item.Key.endsWith('/')) {
-                        allItems.push(item);
-                    }
-                }
+        // Use an async iterator to process items as they are listed, preventing memory buildup
+        for await (const item of listObjectsGenerator()) {
+            // If we've reached the concurrency limit, wait for at least one download to finish
+            if (activeDownloads.size >= CONCURRENCY_LIMIT) {
+                await Promise.race(activeDownloads);
             }
 
-            continuationToken = response.NextContinuationToken;
-        } while (continuationToken);
-
-        if (allItems.length === 0) {
-            console.log('No objects found.');
-            return;
-        }
-
-        console.log(`Found ${allItems.length} files. Starting download with concurrency ${CONCURRENCY_LIMIT}...`);
-
-        // 2. Download with concurrency limit
-        const queue = [...allItems];
-        let completedCount = 0;
-        const total = allItems.length;
-
-        const downloadWorker = async () => {
-            while (queue.length > 0) {
-                const item = queue.shift();
-                if (!item) break;
-
+            // Create the download promise
+            const downloadPromise = (async () => {
                 const localPath = path.join(downloadDir, item.Key);
                 const dir = path.dirname(localPath);
 
-                if (!fs.existsSync(dir)) {
-                    fs.mkdirSync(dir, { recursive: true });
-                }
-
-                // console.log(`Downloading ${item.Key}...`);
-
                 try {
+                    if (!fs.existsSync(dir)) {
+                        fs.mkdirSync(dir, { recursive: true });
+                    }
+
                     const getCommand = new GetObjectCommand({
                         Bucket: config.bucket,
                         Key: item.Key
@@ -88,26 +84,28 @@ async function downloadS3Folder() {
                     await pipeline(getResponse.Body, fs.createWriteStream(localPath));
 
                     completedCount++;
-                    if (completedCount % 10 === 0 || completedCount === total) {
-                        process.stdout.write(`\rProgress: ${completedCount}/${total}`);
+                    if (completedCount % 10 === 0) {
+                        process.stdout.write(`\rFiles Downloaded: ${completedCount} (Active: ${activeDownloads.size})`);
                     }
                 } catch (e) {
                     console.error(`\nFailed to download ${item.Key}:`, e.message);
                 }
-            }
-        };
+            })();
 
-        const workers = [];
-        for (let i = 0; i < Math.min(CONCURRENCY_LIMIT, allItems.length); i++) {
-            workers.push(downloadWorker());
+            // Track the promise
+            activeDownloads.add(downloadPromise);
+
+            // Remove from set when done
+            downloadPromise.finally(() => activeDownloads.delete(downloadPromise));
         }
 
-        await Promise.all(workers);
+        // Wait for remaining downloads
+        await Promise.all(activeDownloads);
 
-        console.log(`\n\nDownload complete! Files are in: ${downloadDir}`);
+        console.log(`\n\nDownload complete! Total files: ${completedCount}. Files are in: ${downloadDir}`);
 
     } catch (err) {
-        console.error('\nError listing/downloading from S3:', err);
+        console.error('\nError downloading from S3:', err);
     }
 }
 

@@ -1,12 +1,12 @@
 # Deploying Copilot Archiver Backend to AWS EC2
 
-This guide walks you through setting up a free-tier EC2 instance to host your backend server.
+This guide walks through setting up an EC2 instance to host the backend server.
 
-## 0. Prerequisites: AWS Setup
+## Prerequisites: AWS Setup
 
 ## 1. Create an S3 Bucket
 1.  Go to **S3** > **Create bucket**.
-2.  **Bucket name**: `copilot-interaction-bucket-XXX` (Must be unique).
+2.  **Bucket name**: `copilot-interaction-bucket`.
 3.  **Region**: `us-east-1` (or your preferred region).
 4.  **Block Public Access**: Keep **checked** (Blocked). Our server uses secure presigned URLs, so the bucket itself does NOT need to be public.
 5.  Click **Create bucket**.
@@ -78,19 +78,13 @@ sudo dnf install git -y
 ```
 
 ## 7. Deploy Code
-You can either clone your repo or copy the files.
-**Option A (Git Clone):**
+Git clone the repository:
 ```bash
-git clone git@github.com:Keyu-He/Copilot-Interaction-Archiver.git
+git clone git@github.com:<user_name>/Copilot-Interaction-Archiver.git
 type "yes" (if prompted)
 cd Copilot-Interaction-Archiver/server
 ```
 
-**Option B (SCP - simpler for testing):**
-On your *local machine*:
-```bash
-scp -i "archiver-key.pem" -r ./server ec2-user@<EC2-IP>:~/server
-```
 
 ## 8. Configure & Run
 On the EC2 instance:
@@ -117,7 +111,7 @@ node index.js
 ```
 
 ## 9. Keep it Running (PM2)
-To keep the server running after you disconnect:
+To keep the server running after disconnecting, use PM2:
 ```bash
 sudo npm install -g pm2
 pm2 start index.js --name "archiver-backend"
@@ -126,8 +120,8 @@ pm2 startup
 ```
 
 ## 10. Final Step
-Your backend URL is: `http://<YOUR-EC2-PUBLIC-IP>:3000`
-Update the backend URL in package.json to make it default to point to your EC2 instance:
+The backend URL is: `http://<YOUR-EC2-PUBLIC-IP>:3000`
+Update the backend URL in package.json to make it default to point to the EC2 instance:
 ```json
 "copilotArchiver.backendUrl": "http://<YOUR-EC2-PUBLIC-IP>:3000"
 ```
