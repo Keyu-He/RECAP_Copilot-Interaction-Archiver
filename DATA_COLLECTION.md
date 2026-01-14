@@ -14,7 +14,7 @@ s3://<bucket-name>/
                 _meta.json       
         <chatId>/
             metadata.json           <-- Metadata (e.g. workspace path)
-            chat_session.json       <-- Full chat history
+            chat_session.json       <-- Full chat history (includes user prompts and agent responses)
         <workspace_name>/
             shadow_git.bundle       <-- Shadow Git bundle to track file modifications
             history_<timestamp>.bundle  <-- Autosaved checkpoints of the Shadow Git bundle (e.g. every day)
@@ -30,8 +30,8 @@ We provide a utility script (`server/download_s3.js`) to download and organize t
 
 1.  **Clone the Repository** (if you haven't already):
     ```bash
-    git clone https://github.com/keyuhe/copilot-archiver.git
-    cd copilot-archiver
+    git clone https://github.com/Keyu-He/copilot-interaction-archiver.git
+    cd copilot-interaction-archiver
     ```
 
 2.  **Install Dependencies**:
@@ -82,7 +82,7 @@ downloaded_snapshots/
             _meta.json              
         <chatId>/
             metadata.json           <-- Metadata (e.g. workspace path)
-            chat_session.json       <-- Full chat history
+            chat_session.json       <-- Full chat history (includes user prompts and agent responses)
         <workspace_name>/
             shadow_git.bundle       <-- Shadow Git bundle to track file modifications
             history_<timestamp>.bundle  <-- Autosaved checkpoints of the Shadow Git bundle (e.g. every day)

@@ -7,14 +7,16 @@
   "icon": "icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/keyuhe/copilot-archiver"
+    "url": "https://github.com/Keyu-He/copilot-interaction-archiver"
   },
   "license": "MIT",
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Other"
+    "Education",
+    "Machine Learning",
+    "AI"
   ],
   "activationEvents": [
     "onStartupFinished"

@@ -56,7 +56,7 @@ For the extension to better capture the interactions, **GitHub Copilot Chat shou
 ![Enable Debug Logging](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/enable_debug_logging.gif)
 
 ### 5. Coding & Verification
-- If you see the status bar item `$(⎷) Archiver: <YourID>`, everything is working!
+- If you see the status bar item `⎷ Archiver: <YourID>`, everything is working!
 - You can start coding on your homeworks as normal.
 
 > [!TIP] To use the **Copilot Chat**, click the ``Toggle Chat`` button near the search bar on the top of the editor. This will open the chat panel. 
@@ -81,3 +81,11 @@ Your data is stored securely:
 > [!WARNING]
 > Please do not move / delete files in these two folders. They are necessary for tracking your interactions.
 - **Cloud**: Uploaded to a private, secure S3 bucket managed by the course staff.
+
+---
+
+## Maintainers
+
+| Keyu He | Qianou Ma |
+| :---: | :---: |
+| [![X](https://img.shields.io/badge/X-%40hekeyu2002-black?style=flat&logo=x)](https://x.com/hekeyu2002) <br> [![GitHub](https://img.shields.io/badge/GitHub-Keyu--He-181717?style=flat&logo=github)](https://github.com/Keyu-He) <br> [![Website](https://img.shields.io/badge/Website-keyu--he.github.io-blue?style=flat&logo=google-chrome)](https://keyu-he.github.io/) | [![X](https://img.shields.io/badge/X-%401000seagull-black?style=flat&logo=x)](https://x.com/1000seagull) <br> [![GitHub](https://img.shields.io/badge/GitHub-mqo00-181717?style=flat&logo=github)](https://github.com/mqo00) <br> [![Website](https://img.shields.io/badge/Website-qianouma.com-blue?style=flat&logo=google-chrome)](https://qianouma.com/) |
