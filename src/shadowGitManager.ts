@@ -2,9 +2,11 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as cp from 'child_process';
+import * as os from 'os';
 import { Logger } from './logger';
 import { SNAPSHOT_BLACKLIST_PATTERNS, MAX_FILE_SIZE_BYTES } from './constants';
 import { S3Uploader } from './s3Uploader';
+import { shouldTrackFile } from './fileUtils';
 
 export class ShadowGitManager {
     private shadowRoot: string | undefined;
@@ -21,7 +23,7 @@ export class ShadowGitManager {
     private uploadTimer: NodeJS.Timeout | undefined;
     private isSyncing: boolean = false;
     private pendingSync: boolean = false;
-    private readonly UPLOAD_COOLDOWN_MS = 60000; // 1 minute
+    private readonly UPLOAD_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 
     constructor(context: vscode.ExtensionContext) {
         this.s3Uploader = new S3Uploader(context.secrets);
@@ -38,6 +40,46 @@ export class ShadowGitManager {
         this.shadowRoot = path.join(this.workspaceRoot, '.archiver_shadow');
 
         try {
+            // 0. Safety Check: If Repo is Bloated (> 1GB), Nuke it.
+            if (fs.existsSync(this.shadowRoot)) {
+                const size = await this.getFolderSize(this.shadowRoot);
+                const MAX_REPO_SIZE = 1 * 1024 * 1024 * 1024; // 1GB
+                if (size > MAX_REPO_SIZE) {
+                    Logger.warn(`ShadowGit: Repo bloated (${(size / 1024 / 1024 / 1024).toFixed(2)} GB). Performing Hard Reset.`);
+
+                    // Upload Reset Log to S3
+                    try {
+                        const timestamp = new Date().toISOString().replace(/[:.]/g, '_');
+                        const workspaceName = this.workspaceRoot ? path.basename(this.workspaceRoot) : 'unknown';
+                        const safeWorkspaceName = workspaceName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+                        const logContent = `Repo size: ${(size / 1024 / 1024 / 1024).toFixed(4)} GB\nReset performed at: ${new Date().toISOString()}`;
+                        const logPath = path.join(this.shadowRoot, 'reset_log.txt');
+
+                        // Write to shadow root before deletion
+                        fs.writeFileSync(logPath, logContent);
+
+                        const config = vscode.workspace.getConfiguration('copilotArchiver');
+                        const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
+                        const s3Key = `${s3FolderPrefix}/${safeWorkspaceName}/diagnostics/reset_${timestamp}.txt`;
+
+                        await this.s3Uploader.uploadFile(logPath, s3Key);
+                        Logger.info('ShadowGit: Reset log uploaded to S3.');
+                    } catch (e) {
+                        Logger.error(`ShadowGit: Failed to upload reset log: ${e}`);
+                    }
+
+                    fs.rmSync(this.shadowRoot, { recursive: true, force: true });
+                }
+            }
+
+            // RECURSION GUARD:
+            // Check if workspaceRoot seems to be inside another shadow root or is the shadow root itself
+            if (this.workspaceRoot.includes('.archiver_shadow')) {
+                Logger.warn(`ShadowGit: Potential recursion detected. Workspace root contains '.archiver_shadow'. Aborting initialization.`);
+                return;
+            }
+
             // 1. Create/Init Shadow Repo
             if (!fs.existsSync(this.shadowRoot)) {
                 fs.mkdirSync(this.shadowRoot, { recursive: true });
@@ -45,9 +87,19 @@ export class ShadowGitManager {
                 // Configure user for this repo to avoid "Please tell me who you are" errors
                 await this.runGitCommand(['config', 'user.email', 'archiver@copilot.local'], this.shadowRoot);
                 await this.runGitCommand(['config', 'user.name', 'Copilot Archiver'], this.shadowRoot);
+
+                // DATA SAFETY: Create a .gitignore inside the shadow repo as a second line of defense
+                // This prevents git from adding blacklisted files even if they are accidentally copied here
+                // DATA SAFETY: Create a .gitignore inside the shadow repo as a second line of defense
+                this.updateShadowGitignore();
+
                 Logger.info('Initialized Shadow Git repository.');
 
                 await this.populateShadowRepo();
+            } else {
+                // Ensure .gitignore exists and is up to date even for existing repos
+                // This ensures the fix applies to users retrieving the update
+                this.updateShadowGitignore();
             }
 
             // 2. Hide from VS Code Source Control
@@ -81,30 +133,7 @@ export class ShadowGitManager {
         }
     }
 
-    /**
-     * Checks if a file should be tracked based on blacklist and size.
-     */
-    private shouldTrackFile(uri: vscode.Uri, relativePath: string): boolean {
-        // 1. Blacklist & Extension Check
-        const segments = relativePath.split(/[/\\]/);
-        const ext = path.extname(uri.fsPath).toLowerCase();
-        if (segments.some(s => s.startsWith('.') || SNAPSHOT_BLACKLIST_PATTERNS.includes(s)) || SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
-            return false;
-        }
 
-        // 2. Size Check
-        try {
-            const stats = fs.statSync(uri.fsPath);
-            if (stats.size > MAX_FILE_SIZE_BYTES) {
-                Logger.warn(`ShadowGit: Skipping large file ${relativePath} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
-                return false;
-            }
-        } catch (e) {
-            return false;
-        }
-
-        return true;
-    }
 
     async handleFileSave(document: vscode.TextDocument) {
         if (!this.workspaceRoot || !this.shadowRoot) return;
@@ -113,7 +142,7 @@ export class ShadowGitManager {
 
         const relativePath = path.relative(this.workspaceRoot, document.uri.fsPath);
 
-        if (!this.shouldTrackFile(document.uri, relativePath)) {
+        if (!shouldTrackFile(document.uri.fsPath, relativePath)) {
             return;
         }
 
@@ -163,6 +192,8 @@ export class ShadowGitManager {
         for (const uri of event.files) {
             // Only handle files inside the workspace
             if (!uri.fsPath.startsWith(this.workspaceRoot)) continue;
+            // Skip files inside .archiver_shadow or .git
+            if (uri.fsPath.includes('.archiver_shadow') || uri.fsPath.includes('.git')) continue;
 
             const relativePath = path.relative(this.workspaceRoot, uri.fsPath);
             const shadowFilePath = path.join(this.shadowRoot, relativePath);
@@ -223,27 +254,26 @@ export class ShadowGitManager {
 
         for (const uri of event.files) {
             if (!uri.fsPath.startsWith(this.workspaceRoot)) continue;
+            // Skip files inside .archiver_shadow or .git
+            if (uri.fsPath.includes('.archiver_shadow') || uri.fsPath.includes('.git')) continue;
 
             const relativePath = path.relative(this.workspaceRoot, uri.fsPath);
             const shadowFilePath = path.join(this.shadowRoot, relativePath);
 
             try {
-                // If it's a directory
-                if (fs.statSync(uri.fsPath).isDirectory()) {
-                    // Check if empty
-                    if (fs.readdirSync(uri.fsPath).length === 0) {
-                        // Recursive handling for directories
-                        createdCount += await this.processDirectoryCreate(uri.fsPath);
-                    } else {
-                        // Single file
-                        if (this.shouldTrackFile(uri, relativePath)) {
-                            const shadowFileDir = path.dirname(shadowFilePath);
-                            if (!fs.existsSync(shadowFileDir)) {
-                                fs.mkdirSync(shadowFileDir, { recursive: true });
-                            }
-                            fs.copyFileSync(uri.fsPath, shadowFilePath);
-                            createdCount++;
+                const stats = fs.statSync(uri.fsPath);
+                if (stats.isDirectory()) {
+                    // Handle directory creation (recursive)
+                    createdCount += await this.processDirectoryCreate(uri.fsPath);
+                } else {
+                    // Handle single file creation
+                    if (shouldTrackFile(uri.fsPath, relativePath)) {
+                        const shadowFileDir = path.dirname(shadowFilePath);
+                        if (!fs.existsSync(shadowFileDir)) {
+                            fs.mkdirSync(shadowFileDir, { recursive: true });
                         }
+                        fs.copyFileSync(uri.fsPath, shadowFilePath);
+                        createdCount++;
                     }
                 }
             } catch (err) {
@@ -272,6 +302,8 @@ export class ShadowGitManager {
     // Helper to recursively add a directory
     private async processDirectoryCreate(dirPath: string): Promise<number> {
         if (!this.workspaceRoot || !this.shadowRoot) return 0;
+        // Skip .archiver_shadow or .git directories
+        if (dirPath.includes('.archiver_shadow') || dirPath.includes('.git')) return 0;
         let count = 0;
 
         const entries = fs.readdirSync(dirPath, { withFileTypes: true });
@@ -295,7 +327,7 @@ export class ShadowGitManager {
             } else {
                 const relativePath = path.relative(this.workspaceRoot, fullPath);
                 const uri = vscode.Uri.file(fullPath);
-                if (this.shouldTrackFile(uri, relativePath)) {
+                if (shouldTrackFile(uri.fsPath, relativePath)) {
                     const shadowFilePath = path.join(this.shadowRoot, relativePath);
                     const shadowFileDir = path.dirname(shadowFilePath);
                     if (!fs.existsSync(shadowFileDir)) {
@@ -316,6 +348,9 @@ export class ShadowGitManager {
 
         for (const { oldUri, newUri } of event.files) {
             if (!oldUri.fsPath.startsWith(this.workspaceRoot) || !newUri.fsPath.startsWith(this.workspaceRoot)) continue;
+            // Skip files inside .archiver_shadow or .git
+            if (oldUri.fsPath.includes('.archiver_shadow') || oldUri.fsPath.includes('.git')) continue;
+            if (newUri.fsPath.includes('.archiver_shadow') || newUri.fsPath.includes('.git')) continue;
 
             const oldRelativePath = path.relative(this.workspaceRoot, oldUri.fsPath);
             const newRelativePath = path.relative(this.workspaceRoot, newUri.fsPath);
@@ -342,7 +377,7 @@ export class ShadowGitManager {
                     if (fs.statSync(newUri.fsPath).isDirectory()) {
                         renamedCount += await this.processDirectoryCreate(newUri.fsPath);
                     } else {
-                        if (this.shouldTrackFile(newUri, newRelativePath)) {
+                        if (shouldTrackFile(newUri.fsPath, newRelativePath)) {
                             const newShadowDir = path.dirname(newShadowPath);
                             if (!fs.existsSync(newShadowDir)) {
                                 fs.mkdirSync(newShadowDir, { recursive: true });
@@ -380,9 +415,11 @@ export class ShadowGitManager {
     async handleFileChange(document: vscode.TextDocument) {
         if (!this.workspaceRoot || !this.shadowRoot) return;
         if (!document.uri.fsPath.startsWith(this.workspaceRoot)) return;
+        // Skip files inside .archiver_shadow or .git
+        if (document.uri.fsPath.includes('.archiver_shadow') || document.uri.fsPath.includes('.git')) return;
         // Skip large files, blacklisted, etc.
         const relativePath = path.relative(this.workspaceRoot, document.uri.fsPath);
-        if (!this.shouldTrackFile(document.uri, relativePath)) return;
+        if (!shouldTrackFile(document.uri.fsPath, relativePath)) return;
 
         const fsPath = document.uri.fsPath;
 
@@ -469,41 +506,37 @@ export class ShadowGitManager {
         }
 
         Logger.info('ShadowGit: Starting Sync Check...');
+
+        // Create bundle in system temp directory to avoid it being tracked by git
+        const config = vscode.workspace.getConfiguration('copilotArchiver');
+        const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
+        const workspaceName = this.workspaceRoot ? path.basename(this.workspaceRoot) : 'unknown_workspace';
+        const safeWorkspaceName = workspaceName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+        const bundlePath = path.join(os.tmpdir(), `shadow_git_${safeWorkspaceName}.bundle`);
+
         try {
             // 1. Check for Changes (HEAD vs Last Uploaded HEAD)
             const currentHead = await this.runGitCommand(['rev-parse', 'HEAD'], this.shadowRoot);
 
             if (!force && currentHead === this.lastUploadedHead) {
                 Logger.info('ShadowGit: Skipping sync (No changes since last upload).');
+                this.isSyncing = false;
                 return;
             }
 
-            // 2. Create Bundle
-            // We use a temp name first
-            const timestamp = new Date().toISOString().replace(/:/g, '_');
-            const tempBundleName = `temp_${timestamp}.bundle`;
-            const bundlePath = path.join(this.shadowRoot, tempBundleName);
+            // 2. Create Bundle in temp directory (using absolute path)
+            Logger.info(`ShadowGit: Creating bundle at ${bundlePath}...`);
+            await this.runGitCommand(['bundle', 'create', bundlePath, '--all'], this.shadowRoot);
 
-            // Bundle all branches/tags
-            await this.runGitCommand(['bundle', 'create', tempBundleName, '--all'], this.shadowRoot);
-
-            if (!fs.existsSync(bundlePath)) {
-                Logger.warn('ShadowGit: No bundle created (maybe empty repo?)');
-                return;
-            }
-
-            const stats = fs.statSync(bundlePath);
-            Logger.info(`ShadowGit: Bundle created (${(stats.size / 1024).toFixed(2)} KB). Uploading...`);
-
-            // 3. Upload Static Bundle (Always triggers on valid change)
-            const config = vscode.workspace.getConfiguration('copilotArchiver');
-            const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
-            const workspaceName = this.workspaceRoot ? path.basename(this.workspaceRoot) : 'unknown_workspace';
-            const safeWorkspaceName = workspaceName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+            // 3. Upload to S3
+            Logger.info(`ShadowGit: Bundle created. Uploading to S3...`);
 
             const staticS3Key = `${s3FolderPrefix}/${safeWorkspaceName}/shadow_git/shadow_git.bundle`;
 
-            await this.s3Uploader.uploadFile(bundlePath, staticS3Key);
+            await this.s3Uploader.uploadFile(
+                bundlePath,
+                staticS3Key
+            );
             Logger.info('ShadowGit: Static bundle uploaded.');
 
             // 4. Daily Backup Check
@@ -514,6 +547,7 @@ export class ShadowGitManager {
 
             if (now - lastDailyUpload > ONE_DAY_MS) {
                 Logger.info('ShadowGit: Performing Daily Backup...');
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '_');
                 const dailyBundleName = `history_${timestamp}.bundle`;
                 const dailyS3Key = `${s3FolderPrefix}/${safeWorkspaceName}/shadow_git/${dailyBundleName}`;
 
@@ -525,20 +559,27 @@ export class ShadowGitManager {
                 Logger.info(`ShadowGit: Daily backup uploaded as ${dailyBundleName}`);
             }
 
-            // 5. Cleanup
-            fs.unlinkSync(bundlePath);
-
             // Update State
             this.lastUploadedHead = currentHead;
-            this.lastUploadTime = Date.now(); // Update timestamp only on success
+            this.lastUploadTime = Date.now();
             Logger.info('ShadowGit: Sync complete.');
 
         } catch (err) {
             Logger.error(`ShadowGit Sync Failed: ${err}`);
         } finally {
+            // Always cleanup bundle from temp directory
+            try {
+                if (fs.existsSync(bundlePath)) {
+                    fs.unlinkSync(bundlePath);
+                    Logger.debug('ShadowGit: Cleaned up temp bundle.');
+                }
+            } catch (e) {
+                Logger.warn(`ShadowGit: Failed to cleanup temp bundle: ${e}`);
+            }
             this.isSyncing = false;
             // Handle pending triggers (occurred during upload)
             if (this.pendingSync) {
+                this.pendingSync = false;
                 this.triggerThrottledSync();
             }
         }
@@ -559,7 +600,7 @@ export class ShadowGitManager {
                 const relativePath = vscode.workspace.asRelativePath(file);
 
                 // We trust finding 'exclude' for .git etc, but double check our custom logic
-                if (!this.shouldTrackFile(file, relativePath)) {
+                if (!shouldTrackFile(file.fsPath, relativePath)) {
                     continue;
                 }
 
@@ -603,5 +644,62 @@ export class ShadowGitManager {
                 }
             });
         });
+    }
+
+    private updateShadowGitignore() {
+        if (!this.shadowRoot || !this.workspaceRoot) return;
+
+        try {
+            const gitignorePath = path.join(this.shadowRoot, '.gitignore');
+
+            // Format patterns for .gitignore
+            const formattedPatterns = SNAPSHOT_BLACKLIST_PATTERNS.map(p => {
+                if (p.startsWith('.')) {
+                    // Extension pattern: .json -> **/*.json
+                    return `**/*${p}`;
+                } else {
+                    // Directory pattern: node_modules -> **/node_modules/**
+                    return `**/${p}/**`;
+                }
+            });
+
+            let gitignoreContent = '# Auto-generated blacklist patterns\n';
+            gitignoreContent += formattedPatterns.join('\n') + '\n';
+
+            // Append user's workspace .gitignore content if it exists
+            const userGitignorePath = path.join(this.workspaceRoot, '.gitignore');
+            if (fs.existsSync(userGitignorePath)) {
+                try {
+                    const userContent = fs.readFileSync(userGitignorePath, 'utf8');
+                    gitignoreContent += '\n# User .gitignore content\n' + userContent + '\n';
+                } catch (e) {
+                    Logger.warn(`ShadowGit: Failed to read user .gitignore: ${e}`);
+                }
+            }
+
+            fs.writeFileSync(gitignorePath, gitignoreContent);
+            Logger.info('ShadowGit: Updated shadow .gitignore with safety patterns and user ignores.');
+        } catch (err) {
+            Logger.error(`ShadowGit: Failed to update .gitignore: ${err}`);
+        }
+    }
+
+    private async getFolderSize(folderPath: string): Promise<number> {
+        let totalSize = 0;
+        try {
+            const files = await fs.promises.readdir(folderPath, { withFileTypes: true });
+            for (const file of files) {
+                const filePath = path.join(folderPath, file.name);
+                if (file.isDirectory()) {
+                    totalSize += await this.getFolderSize(filePath);
+                } else {
+                    const stats = await fs.promises.stat(filePath);
+                    totalSize += stats.size;
+                }
+            }
+        } catch (e) {
+            // Ignore errors for individual files/folders during size check
+        }
+        return totalSize;
     }
 }
