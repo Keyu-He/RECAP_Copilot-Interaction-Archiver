@@ -90,7 +90,6 @@ export class ShadowGitManager {
 
                 // DATA SAFETY: Create a .gitignore inside the shadow repo as a second line of defense
                 // This prevents git from adding blacklisted files even if they are accidentally copied here
-                // DATA SAFETY: Create a .gitignore inside the shadow repo as a second line of defense
                 this.updateShadowGitignore();
 
                 Logger.info('Initialized Shadow Git repository.');

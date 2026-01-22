@@ -232,27 +232,6 @@ export class ChatSessionWatcher {
         }
     }
 
-    // Helper to find log file (Duplicate of LogWatcher logic for now to keep independent)
-    private async locateCopilotLogFile(): Promise<string | undefined> {
-        if (!this.context.logUri) return undefined;
-        try {
-            const outputLoggingDir = path.dirname(this.context.logUri.fsPath);
-            if (!fs.existsSync(outputLoggingDir)) return undefined;
-
-            const entries = await fs.promises.readdir(outputLoggingDir, { withFileTypes: true });
-            for (const entry of entries) {
-                if (entry.isDirectory() && entry.name === 'GitHub.copilot-chat') {
-                    const candidateDir = path.join(outputLoggingDir, entry.name);
-                    const files = await fs.promises.readdir(candidateDir);
-                    if (files.includes('GitHub Copilot Chat.log')) {
-                        return path.join(candidateDir, 'GitHub Copilot Chat.log');
-                    }
-                }
-            }
-        } catch (e) { /* ignore */ }
-        return undefined;
-    }
-
     private async findMatchingTempSnapshot(workspacePath: string, phase: 'input' | 'output', targetIsoTime?: string): Promise<string | undefined> {
         if (!targetIsoTime) return undefined; // Cannot match without timestamp
 
