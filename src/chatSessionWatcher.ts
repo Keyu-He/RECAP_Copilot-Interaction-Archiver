@@ -7,19 +7,12 @@ import * as path from 'path';
 import { SnapshotManager } from './snapshotManager';
 import { Logger } from './logger';
 
-const ENABLE_DEBUG_LOGGING = true;
-
-interface ChatTurn {
-    turnId: string;
-    timestamp: string;
-    userMessage: string;
-    botResponse: string;
-    thinking?: string;
-    toolCalls?: any[];
-    edits?: any[];
-    agentIntent?: any;
-    metadata?: any;
-}
+// Mount paths for different host OS (configured in devcontainer.json)
+const HOST_MOUNT_PATHS = [
+    '/host-workspaceStorage',         // macOS
+    '/host-workspaceStorage-linux',   // Linux
+    '/host-workspaceStorage-windows'  // Windows
+];
 
 export class ChatSessionWatcher {
     private snapshotManager: SnapshotManager;
@@ -42,14 +35,77 @@ export class ChatSessionWatcher {
         }
     }
 
+    /**
+     * Check if we're running in a remote/container environment
+     */
+    private isRemoteEnvironment(): boolean {
+        return vscode.env.remoteName !== undefined;
+    }
+
+    /**
+     * Find an available host mount path (for DevContainer scenarios)
+     */
+    private findHostMountPath(): string | undefined {
+        for (const mountPath of HOST_MOUNT_PATHS) {
+            if (fs.existsSync(mountPath)) {
+                Logger.info(`Found host mount at: ${mountPath}`);
+                return mountPath;
+            }
+        }
+        return undefined;
+    }
+
+    /**
+     * Extract workspace hash from storage URI path
+     * e.g., /home/node/.vscode-server/data/User/workspaceStorage/ae0099939b76912e8a61f62483b0fe28/...
+     *       -> ae0099939b76912e8a61f62483b0fe28
+     */
+    private extractWorkspaceHash(): string | undefined {
+        if (!this.storageUri) return undefined;
+
+        const storagePath = this.storageUri.fsPath;
+        // The path contains .../workspaceStorage/<hash>/...
+        const match = storagePath.match(/workspaceStorage[\/\\]([a-f0-9]+)/i);
+        if (match && match[1]) {
+            Logger.info(`Extracted workspace hash: ${match[1]}`);
+            return match[1];
+        }
+        return undefined;
+    }
+
     private async initWatcher() {
         if (!this.storageUri) return;
 
-        // The path is typically .../workspaceStorage/<uid>/chatSessions/
-        // context.storageUri points to .../workspaceStorage/<uid>/<extensionId>
-        // So we need to go up one level to find the chatSessions folder
-        const workspaceStorageRoot = path.dirname(this.storageUri.fsPath);
-        const chatSessionsPath = path.join(workspaceStorageRoot, 'chatSessions');
+        let chatSessionsPath: string;
+
+        // Debug: Log remote environment detection
+        Logger.info(`Remote environment check: remoteName = ${vscode.env.remoteName}`);
+
+        // Check if we're in a remote/container environment with a host mount
+        if (this.isRemoteEnvironment()) {
+            Logger.info('Detected remote environment (DevContainer/SSH)');
+
+            const hostMountPath = this.findHostMountPath();
+            const workspaceHash = this.extractWorkspaceHash();
+
+            if (hostMountPath && workspaceHash) {
+                // Use the mounted host path
+                chatSessionsPath = path.join(hostMountPath, workspaceHash, 'chatSessions');
+                Logger.info(`Using mounted host path for chat sessions: ${chatSessionsPath}`);
+            } else {
+                // Fall back to container path (might not have chat sessions)
+                Logger.warn('Host mount not available or hash not found. Chat session tracking may be limited.');
+                const workspaceStorageRoot = path.dirname(this.storageUri.fsPath);
+                chatSessionsPath = path.join(workspaceStorageRoot, 'chatSessions');
+            }
+        } else {
+            // Normal local environment
+            // The path is typically .../workspaceStorage/<uid>/chatSessions/
+            // context.storageUri points to .../workspaceStorage/<uid>/<extensionId>
+            // So we need to go up one level to find the chatSessions folder
+            const workspaceStorageRoot = path.dirname(this.storageUri.fsPath);
+            chatSessionsPath = path.join(workspaceStorageRoot, 'chatSessions');
+        }
 
         Logger.info(`Initializing ChatSessionWatcher at: ${chatSessionsPath}`);
 
@@ -75,7 +131,7 @@ export class ChatSessionWatcher {
         try {
             const watcher = fs.watch(dirPath, (eventType, filename) => {
                 Logger.info(`File change detected: ${filename}`);
-                if (filename && filename.endsWith('.json')) {
+                if (filename && (filename.endsWith('.json') || filename.endsWith('.jsonl'))) {
                     this.handleFileChange(path.join(dirPath, filename));
                 }
             });
@@ -85,258 +141,34 @@ export class ChatSessionWatcher {
         }
     }
 
+    private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
+    private lastUploadTime: Map<string, number> = new Map();
+
     private handleFileChange(filePath: string) {
-        this.processChatSessionFile(filePath);
-    }
+        const ext = path.extname(filePath);
+        const chatId = path.basename(filePath, ext);
+        const now = Date.now();
+        const lastUpload = this.lastUploadTime.get(filePath) || 0;
 
-    private processedFiles: Map<string, { lastRequestsLength: number; lastHasPendingEdits: boolean | undefined; lastSessionData?: any }> = new Map();
-
-    private async processChatSessionFile(filePath: string) {
-        try {
-            const content = await fs.promises.readFile(filePath, 'utf-8');
-            const sessionData = JSON.parse(content);
-            const chatIdOverride = path.basename(filePath, '.json');
-
-            if (!sessionData.requests || !Array.isArray(sessionData.requests)) {
-                return;
-            }
-
-            if (!this.processedFiles.has(filePath)) {
-                this.processedFiles.set(filePath, {
-                    lastRequestsLength: 0,
-                    lastHasPendingEdits: undefined,
-                    lastSessionData: undefined
-                });
-            }
-
-            const fileState = this.processedFiles.get(filePath)!;
-            const currentRequestsLength = sessionData.requests.length;
-            const currentHasPendingEdits = sessionData.hasPendingEdits;
-
-            // --- Condition 1: Input Snapshot (New Request Detected) ---
-            if (currentRequestsLength > fileState.lastRequestsLength) {
-                const lastRequest = sessionData.requests[currentRequestsLength - 1];
-                Logger.info(`New chat turn detected (Input Phase): ${lastRequest.requestId}`);
-
-                const turnData = this.extractTurnData(lastRequest, false);
-
-                // Input Timestamp: Use request.timestamp
-                const inputTimestamp = lastRequest.timestamp;
-
-                await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'input', inputTimestamp, sessionData);
-            }
-
-            // --- Condition 2: Output Snapshot (Completion Detected) ---
-            if (currentRequestsLength > 0) {
-                const lastRequest = sessionData.requests[currentRequestsLength - 1];
-
-                const editsResolved = fileState.lastHasPendingEdits === true && currentHasPendingEdits === false;
-                const responseDone = lastRequest.response?.done === true && currentHasPendingEdits !== true;
-
-                if ((editsResolved || responseDone) && lastRequest.response) {
-                    Logger.info(`Output triggered for turn ${lastRequest.requestId}`);
-
-                    const turnData = this.extractTurnData(lastRequest, true);
-
-                    // Output Timestamp: Try modelState.completedAt, fall back to turnData.timestamp
-                    const outputTimestamp = lastRequest.modelState?.completedAt ? new Date(lastRequest.modelState.completedAt).toISOString() : turnData.timestamp;
-
-                    await this.captureSnapshotWrapper(filePath, chatIdOverride, currentRequestsLength, turnData, 'output', outputTimestamp, sessionData);
-                }
-            }
-
-            // --- Condition 3: Debug Change Logging (Always run if enabled) ---
-            if (ENABLE_DEBUG_LOGGING) {
-                this.logDebugChanges(filePath, chatIdOverride, fileState.lastSessionData, sessionData, currentRequestsLength, currentHasPendingEdits);
-            }
-
-            // Update state
-            fileState.lastRequestsLength = currentRequestsLength;
-            fileState.lastHasPendingEdits = currentHasPendingEdits;
-            fileState.lastSessionData = sessionData;
-
-        } catch (err) {
-            Logger.error(`Error processing chat session file ${filePath}: ${err}`);
-        }
-    }
-
-    // --- Helper Methods ---
-
-    private extractTurnData(request: any, isOutput: boolean): ChatTurn {
-        const turnId = request.requestId;
-        const userMessage = request.message?.text || '';
-
-        let botResponse = '';
-        let thinking = '';
-        const toolCalls: any[] = [];
-        const edits: any[] = [];
-
-        if (isOutput && request.response) {
-            for (const part of request.response) {
-                if (part.kind === 'text' || (!part.kind && part.value)) {
-                    botResponse += (part.value || part.text || '') + '\n';
-                }
-                if (part.kind === 'thinking') {
-                    thinking += (part.value || '') + '\n';
-                }
-                if (part.kind === 'toolInvocation' || part.kind === 'toolInvocationSerialized') {
-                    toolCalls.push(part);
-                }
-                if (part.kind === 'textEditGroup') {
-                    edits.push({
-                        file: part.uri?.fsPath,
-                        edits: part.edits
-                    });
-                }
-            }
-        }
-
-        return {
-            turnId,
-            timestamp: new Date().toISOString(),
-            userMessage,
-            botResponse: botResponse.trim(),
-            thinking: thinking.trim(),
-            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            edits: edits.length > 0 ? edits : undefined,
-            agentIntent: request.usedContext?.agentIntent, // Assuming it lives here or top level
-            metadata: isOutput ? request : undefined
+        const doUpload = async () => {
+            this.debounceTimers.delete(filePath);
+            this.lastUploadTime.set(filePath, Date.now());
+            Logger.info(`Chat session update for ${chatId}`);
+            await this.snapshotManager.updateChatSessionFile(chatId, filePath);
         };
-    }
 
-    private async captureSnapshotWrapper(
-        filePath: string,
-        chatId: string,
-        turnIndex: number,
-        turnData: ChatTurn,
-        phase: 'input' | 'output',
-        targetTimestamp?: string,
-        sessionData?: any
-    ) {
-        const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-        if (!workspacePath) return;
-
-        // 1. Handle Repo Snapshot (Move from Temp)
-        const tempSnapshotPath = await this.findMatchingTempSnapshot(workspacePath, phase, targetTimestamp);
-
-        if (tempSnapshotPath) {
-            const snapshotTimestamp = path.basename(tempSnapshotPath);
-            Logger.info(`Found timestamp-matched snapshot for ${phase}: ${snapshotTimestamp}`);
-        } else {
-            Logger.warn(`No snapshot found for ${phase} to associate.`);
-        }
-
-        // 2. Update Chat Session File
-        if (sessionData) {
-            await this.snapshotManager.updateChatSessionFile(chatId, sessionData);
-        }
-    }
-
-    private async findMatchingTempSnapshot(workspacePath: string, phase: 'input' | 'output', targetIsoTime?: string): Promise<string | undefined> {
-        if (!targetIsoTime) return undefined; // Cannot match without timestamp
-
-        try {
-            const config = vscode.workspace.getConfiguration('copilotArchiver');
-            const outputPath = config.get<string>('outputPath', '.snapshots');
-            const tempDir = path.join(workspacePath, outputPath, 'repo_snapshots');
-
-            if (!fs.existsSync(tempDir)) return undefined;
-
-            const targetTime = new Date(targetIsoTime).getTime();
-            const entries = await fs.promises.readdir(tempDir, { withFileTypes: true });
-
-            let bestCandidate: string | undefined;
-            let minDiff = Infinity;
-
-            for (const e of entries) {
-                if (e.isDirectory()) {
-                    const folderName = e.name; // e.g. 2025-12-23T01_14_48.197Z
-                    // Restore colons for ISO parsing
-                    const isoString = folderName.replace(/_/g, ':');
-                    const snapshotTime = new Date(isoString).getTime();
-
-                    if (!isNaN(snapshotTime)) {
-                        // Calculate difference: Target (JSON Event) vs Snapshot (Log Event)
-
-                        const diff = snapshotTime - targetTime;
-
-                        // Check window: -5000ms to 5000ms
-                        if (diff >= -5000 && diff <= 5000) {
-                            if (Math.abs(diff) < minDiff) {
-                                minDiff = Math.abs(diff);
-                                bestCandidate = path.join(tempDir, e.name);
-                            }
-                        }
-                    }
-                }
-            }
-            return bestCandidate;
-
-        } catch (err) {
-            Logger.warn(`Error finding temp snapshot: ${err}`);
-        }
-        return undefined;
-    }
-
-
-    private logDebugChanges(
-        filePath: string,
-        chatId: string,
-        lastData: any,
-        currentData: any,
-        currentRequestsLength: number,
-        currentHasPendingEdits: boolean | undefined
-    ) {
-        const changes: string[] = [];
-        lastData = lastData || {};
-
-        // 1. Check Requests Length
-        if (currentRequestsLength !== (lastData.requests?.length || 0)) {
-            changes.push(`Requests length changed: ${lastData.requests?.length || 0} -> ${currentRequestsLength}`);
-        }
-
-        // 2. Check Pending Edits
-        if (currentHasPendingEdits !== lastData.hasPendingEdits) {
-            changes.push(`hasPendingEdits changed: ${lastData.hasPendingEdits} -> ${currentHasPendingEdits}`);
-        }
-
-        // 3. Check Last Response Content
-        if (currentRequestsLength > 0) {
-            const lastReq = currentData.requests[currentRequestsLength - 1];
-            const prevReq = lastData.requests?.[currentRequestsLength - 1];
-
-            if (prevReq) {
-                if (lastReq.response?.done !== prevReq.response?.done) {
-                    changes.push(`Turn ${lastReq.requestId} response.done changed: ${prevReq.response?.done} -> ${lastReq.response?.done}`);
-                }
-                const currRespLen = JSON.stringify(lastReq.response || []).length;
-                const prevRespLen = JSON.stringify(prevReq.response || []).length;
-                if (currRespLen !== prevRespLen) {
-                    changes.push(`Turn ${lastReq.requestId} response content length changed: ${prevRespLen} -> ${currRespLen}`);
-                }
-            } else if (currentRequestsLength > (lastData.requests?.length || 0)) {
-                changes.push(`New Turn Added: ${lastReq.requestId}`);
-            }
-        }
-
-        if (changes.length > 0) {
-            const workspacePath = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
-            if (workspacePath) {
-                // CHANGED: Debug logs now go to .snapshots/debug/<chatId>/...
-                const logDir = path.join(workspacePath, '.snapshots', 'debug', chatId);
-                if (!fs.existsSync(logDir)) {
-                    fs.mkdirSync(logDir, { recursive: true });
-                }
-                const debugLogEntry = {
-                    timestamp: new Date().toISOString(),
-                    changes: changes,
-                };
-                fs.appendFileSync(path.join(logDir, '_debug_changes.jsonl'), JSON.stringify(debugLogEntry) + '\n');
-            }
+        if (now - lastUpload >= 10000) {
+            // No recent upload — fire immediately
+            doUpload();
+        } else if (!this.debounceTimers.has(filePath)) {
+            // Schedule trailing upload at exactly lastUpload + 10s
+            const remaining = 10000 - (now - lastUpload);
+            this.debounceTimers.set(filePath, setTimeout(doUpload, remaining));
         }
     }
 
     public dispose() {
         this.watchers.forEach(w => w.close());
+        this.debounceTimers.forEach(t => clearTimeout(t));
     }
 }

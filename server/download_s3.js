@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { S3Client, ListObjectsV2Command, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { NodeHttpHandler } = require('@smithy/node-http-handler');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { pipeline } = require('stream/promises');
@@ -15,10 +17,16 @@ const config = {
     prefix: '' // Download everything by default
 };
 
-const client = new S3Client(config);
-const downloadDir = path.join(__dirname, '..', 'downloaded_snapshots');
+const CONCURRENCY_LIMIT = 200;
+const MAX_RETRIES = 3;
 
-const CONCURRENCY_LIMIT = 100;
+const client = new S3Client({
+    ...config,
+    requestHandler: new NodeHttpHandler({
+        httpsAgent: new https.Agent({ maxSockets: CONCURRENCY_LIMIT }),
+    }),
+});
+const downloadDir = path.join(__dirname, '..', 'downloaded_snapshots');
 
 // Async generator to yield items one by one from S3 pagination
 // Async generator to yield items one by one from S3 pagination
@@ -105,13 +113,20 @@ async function downloadS3Folder() {
                         fs.mkdirSync(dir, { recursive: true });
                     }
 
-                    const getCommand = new GetObjectCommand({
-                        Bucket: config.bucket,
-                        Key: item.Key
-                    });
-
-                    const getResponse = await client.send(getCommand);
-                    await pipeline(getResponse.Body, fs.createWriteStream(localPath));
+                    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                        try {
+                            const getCommand = new GetObjectCommand({
+                                Bucket: config.bucket,
+                                Key: item.Key
+                            });
+                            const getResponse = await client.send(getCommand);
+                            await pipeline(getResponse.Body, fs.createWriteStream(localPath));
+                            break;
+                        } catch (retryErr) {
+                            if (attempt === MAX_RETRIES - 1) throw retryErr;
+                            await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
+                        }
+                    }
 
                     completedCount++;
                     const percent = ((completedCount / totalFiles) * 100).toFixed(1);

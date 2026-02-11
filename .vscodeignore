@@ -12,3 +12,4 @@ DATA_COLLECTION.md
 .venv
 downloaded_snapshots/**
 local_analysis/**
+filtered_*/**

@@ -46,5 +46,6 @@ lerna-debug.log*
 bug_list.txt
 
 downloaded_snapshots
+filtered_*/
 .vscode
 local_analysis/

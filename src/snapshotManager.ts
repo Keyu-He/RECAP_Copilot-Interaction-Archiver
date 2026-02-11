@@ -212,9 +212,9 @@ export class SnapshotManager {
                 if (entry.isDirectory()) {
                     walk(fullPath);
                 } else {
-                    // File Check
+                    // File Check (skip blacklisted extensions, but always keep metadata files)
                     const ext = path.extname(entry.name).toLowerCase();
-                    if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext)) {
+                    if (SNAPSHOT_BLACKLIST_PATTERNS.includes(ext) && entry.name !== '_meta.json') {
                         continue;
                     }
 
@@ -319,7 +319,7 @@ export class SnapshotManager {
         }
     }
 
-    async updateChatSessionFile(chatId: string, sessionData: any): Promise<void> {
+    async updateChatSessionFile(chatId: string, sourceFilePath: string): Promise<void> {
         let tempDir = '';
         let isEphemeral = false;
 
@@ -347,11 +347,13 @@ export class SnapshotManager {
                 fs.mkdirSync(chatDir, { recursive: true });
             }
 
-            // Write chat_session.json with latest data
-            const sessionFilePath = path.join(chatDir, 'chat_session.json');
-            fs.writeFileSync(sessionFilePath, JSON.stringify(sessionData, null, 2));
+            // Copy chat session file as-is (works for both .json and .jsonl)
+            const ext = path.extname(sourceFilePath);
+            const destFileName = `chat_session${ext}`;
+            const sessionFilePath = path.join(chatDir, destFileName);
+            fs.copyFileSync(sourceFilePath, sessionFilePath);
             if (storeLocally) {
-                Logger.info(`Updated chat_session.json for ${chatId}`);
+                Logger.info(`Copied ${destFileName} for ${chatId}`);
             }
 
             // Ensure meta.json exists (mapping chatId -> workspace)
@@ -370,9 +372,7 @@ export class SnapshotManager {
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
                 const uploadPromises: Promise<void>[] = [];
 
-                // Upload chat_session.json
-                const sessionS3Key = `${s3FolderPrefix}/${chatId}/chat_session.json`;
-                // Use s3Uploader instead of uploadToS3
+                const sessionS3Key = `${s3FolderPrefix}/${chatId}/${destFileName}`;
                 uploadPromises.push(this.s3Uploader.uploadFile(sessionFilePath, sessionS3Key).catch(e => Logger.error(`Session file upload failed: ${e}`)));
 
                 // Upload metadata.json
