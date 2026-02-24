@@ -409,7 +409,10 @@ export class ShadowGitManager {
 
     // Debounce timer map for dirty files: fsPath -> Timer
     private dirtyTimers: Map<string, NodeJS.Timeout> = new Map();
+    // Track when the first un-committed edit started per file
+    private dirtyFirstEdit: Map<string, number> = new Map();
     private readonly DIRTY_DEBOUNCE_MS = 5000;
+    private readonly DIRTY_MAX_INTERVAL_MS = 30000; // Force commit after 30s of continuous editing
 
     async handleFileChange(document: vscode.TextDocument) {
         if (!this.workspaceRoot || !this.shadowRoot) return;
@@ -421,6 +424,12 @@ export class ShadowGitManager {
         if (!shouldTrackFile(document.uri.fsPath, relativePath)) return;
 
         const fsPath = document.uri.fsPath;
+        const now = Date.now();
+
+        // Track when the first edit started (if not already tracked)
+        if (!this.dirtyFirstEdit.has(fsPath)) {
+            this.dirtyFirstEdit.set(fsPath, now);
+        }
 
         // Clear existing timer for this file
         if (this.dirtyTimers.has(fsPath)) {
@@ -428,9 +437,15 @@ export class ShadowGitManager {
             this.dirtyTimers.delete(fsPath);
         }
 
+        // If continuous editing exceeds max interval, commit immediately
+        const firstEdit = this.dirtyFirstEdit.get(fsPath)!;
+        const elapsed = now - firstEdit;
+        const delay = elapsed >= this.DIRTY_MAX_INTERVAL_MS ? 0 : this.DIRTY_DEBOUNCE_MS;
+
         // Set new timer
         const timer = setTimeout(async () => {
             this.dirtyTimers.delete(fsPath); // Remove self
+            this.dirtyFirstEdit.delete(fsPath); // Reset first-edit tracker
 
             // Re-check validity just in case
             if (!fs.existsSync(this.shadowRoot!)) return;
@@ -461,7 +476,7 @@ export class ShadowGitManager {
                 }
             }
 
-        }, this.DIRTY_DEBOUNCE_MS);
+        }, delay);
 
         this.dirtyTimers.set(fsPath, timer);
     }
