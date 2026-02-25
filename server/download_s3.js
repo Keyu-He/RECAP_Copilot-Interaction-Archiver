@@ -19,13 +19,27 @@ const config = {
 
 const CONCURRENCY_LIMIT = 200;
 const MAX_RETRIES = 3;
+const BASE_TIMEOUT_MS = 30_000; // 30s minimum
+const TIMEOUT_PER_MB = 5_000;   // +5s per MB
+const MAX_TIMEOUT_MS = 600_000; // 10 min cap
+
+function getTimeout(sizeBytes) {
+    const sizeMB = (sizeBytes || 0) / (1024 * 1024);
+    return Math.min(Math.max(BASE_TIMEOUT_MS, BASE_TIMEOUT_MS + sizeMB * TIMEOUT_PER_MB), MAX_TIMEOUT_MS);
+}
 
 const client = new S3Client({
     ...config,
     requestHandler: new NodeHttpHandler({
         httpsAgent: new https.Agent({ maxSockets: CONCURRENCY_LIMIT }),
+        connectionTimeout: 10_000,
     }),
 });
+
+function sanitizeKey(key) {
+    // Replace characters that are invalid on Windows/some filesystems
+    return key.replace(/:/g, '_').replace(/[<>"|?*]/g, '_');
+}
 const downloadDir = path.join(__dirname, '..', 'downloaded_snapshots');
 
 // Async generator to yield items one by one from S3 pagination
@@ -94,6 +108,7 @@ async function downloadS3Folder() {
         console.log(`Starting download with concurrency ${CONCURRENCY_LIMIT}...`);
 
         let completedCount = 0;
+        let failedCount = 0;
         const activeDownloads = new Set();
 
         // Use an async iterator to process items as they are listed, preventing memory buildup
@@ -105,7 +120,7 @@ async function downloadS3Folder() {
 
             // Create the download promise
             const downloadPromise = (async () => {
-                const localPath = path.join(downloadDir, item.Key);
+                const localPath = path.join(downloadDir, sanitizeKey(item.Key));
                 const dir = path.dirname(localPath);
 
                 try {
@@ -113,16 +128,31 @@ async function downloadS3Folder() {
                         fs.mkdirSync(dir, { recursive: true });
                     }
 
+                    const timeoutMs = getTimeout(item.Size);
                     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                         try {
-                            const getCommand = new GetObjectCommand({
-                                Bucket: config.bucket,
-                                Key: item.Key
-                            });
-                            const getResponse = await client.send(getCommand);
-                            await pipeline(getResponse.Body, fs.createWriteStream(localPath));
+                            const abortController = new AbortController();
+                            const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+                            try {
+                                const getCommand = new GetObjectCommand({
+                                    Bucket: config.bucket,
+                                    Key: item.Key
+                                });
+                                const getResponse = await client.send(getCommand, {
+                                    abortSignal: abortController.signal
+                                });
+                                await pipeline(getResponse.Body, fs.createWriteStream(localPath), {
+                                    signal: abortController.signal
+                                });
+                            } finally {
+                                clearTimeout(timeout);
+                            }
                             break;
                         } catch (retryErr) {
+                            // Clean up partial file on failure
+                            if (fs.existsSync(localPath)) {
+                                try { fs.unlinkSync(localPath); } catch {}
+                            }
                             if (attempt === MAX_RETRIES - 1) throw retryErr;
                             await new Promise(r => setTimeout(r, 1000 * 2 ** attempt));
                         }
@@ -132,7 +162,8 @@ async function downloadS3Folder() {
                     const percent = ((completedCount / totalFiles) * 100).toFixed(1);
                     process.stdout.write(`\rProgress: ${completedCount}/${totalFiles} (${percent}%) | Active: ${activeDownloads.size}   `);
                 } catch (e) {
-                    console.error(`\nFailed to download ${item.Key}:`, e.message);
+                    failedCount++;
+                    console.error(`\nFailed to download ${item.Key} after ${MAX_RETRIES} attempts: ${e.message}`);
                 }
             })();
 
@@ -146,7 +177,7 @@ async function downloadS3Folder() {
         // Wait for remaining downloads
         await Promise.all(activeDownloads);
 
-        console.log(`\n\nDownload complete! Total files: ${completedCount}. Files are in: ${downloadDir}`);
+        console.log(`\n\nDownload complete! ${completedCount} downloaded, ${failedCount} failed. Files are in: ${downloadDir}`);
 
     } catch (err) {
         console.error('\nError downloading from S3:', err);
