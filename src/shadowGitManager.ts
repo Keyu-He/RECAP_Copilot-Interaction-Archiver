@@ -12,7 +12,16 @@ export class ShadowGitManager {
     private shadowRoot: string | undefined;
     private workspaceRoot: string | undefined;
 
-    // State flag to distinguish Agent vs User edits
+    // Attribution approach:
+    //
+    // CURRENT (post-hoc): All commits are labeled "USER EDIT/CREATE/DELETE".
+    // After data collection, the replay tool cross-references git commits with
+    // textEditGroup (TEG) entries from chat_session.json to determine which
+    // edits were AI-generated (see local_analysis/replay_server.py).
+    //
+    // FUTURE (real-time): Set isAgentActing=true while Copilot is actively
+    // applying edits, so commits are labeled "AGENT UPDATE/CREATE/DELETE"
+    // in-flight, and no post-hoc matching needed. See setAgentActing() below.
     public isAgentActing: boolean = false;
     private s3Uploader: S3Uploader;
     private globalState: vscode.Memento;
@@ -405,6 +414,19 @@ export class ShadowGitManager {
                 }
             }
         }
+    }
+
+    public setAgentActing(_acting: boolean): void {
+        // TODO: FUTURE Work: implement. Uncomment when real-time detection is ready
+        // Some ideas include:
+        //  1. VS Code API: watch for agent/edit lifecycle events if they become
+        //     available in a future stable extension API, and
+        //  2. TEG file watching. Similar to what are currently done in the data analysis, 
+        //     TEGs in chat_session.json have a `done` flag.
+        //     A file change within ~5s of a TEG with done=false suggests the agent
+        //     is mid-edit; watch the session file in real time.
+        // this.isAgentActing = _acting;
+        throw new Error('setAgentActing() is not yet implemented');
     }
 
     // Debounce timer map for dirty files: fsPath -> Timer
