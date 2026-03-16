@@ -1,0 +1,2456 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Replay Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top bar */
+    .top-bar {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .top-bar h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f0f6fc;
+    }
+
+    .top-bar .stats {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .top-bar .nav-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 4px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .top-bar .nav-btn:hover {
+      background: #30363d;
+    }
+
+    .top-bar .event-counter {
+      font-size: 12px;
+      color: #8b949e;
+      min-width: 80px;
+      text-align: center;
+    }
+
+    /* Main content */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Left panel — file tree */
+    .file-panel {
+      width: 280px;
+      background: #0d1117;
+      border-right: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .file-panel-header {
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+      background: #161b22;
+    }
+
+    .file-list {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .file-item {
+      padding: 4px 12px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .file-item:hover {
+      background: #161b22;
+    }
+
+    .file-item.active {
+      background: #1f6feb33;
+      color: #58a6ff;
+    }
+
+    .file-item.changed {
+      font-weight: 600;
+    }
+
+    .file-item .status {
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 14px;
+      text-align: center;
+    }
+
+    .file-item .status.M {
+      color: #d29922;
+    }
+
+    .file-item .status.A {
+      color: #3fb950;
+    }
+
+    .file-item .status.D {
+      color: #f85149;
+    }
+
+    /* AI attribution */
+    .ai-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      background: #a371f733;
+      color: #a371f7;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 0 5px;
+      border-radius: 3px;
+      cursor: pointer;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .ai-badge:hover {
+      background: #a371f755;
+    }
+
+    .ai-badge.high-confidence {
+      background: #d2992233;
+      color: #d29922;
+      border: 1px solid #d2992266;
+    }
+
+    .ai-badge.high-confidence:hover {
+      background: #d2992244;
+    }
+
+    .ai-badge.low-confidence {
+      background: #d2992233;
+      color: #d29922;
+      border: 1px dashed #d2992266;
+    }
+
+    .ai-badge.low-confidence:hover {
+      background: #d2992244;
+    }
+
+    .ai-badge.external {
+      background: #f0883e33;
+      color: #f0883e;
+      border: 1px dashed #f0883e66;
+    }
+
+    .ai-badge.external:hover {
+      background: #f0883e44;
+    }
+
+    .ai-tooltip {
+      position: fixed;
+      z-index: 1000;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+      max-width: 480px;
+      max-height: 400px;
+      overflow: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      font-size: 12px;
+    }
+
+    .ai-tooltip .tt-header {
+      color: #a371f7;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .ai-tooltip .tt-meta {
+      color: #8b949e;
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .ai-tooltip .tt-prompt {
+      color: #c9d1d9;
+      margin-bottom: 8px;
+      padding: 6px 8px;
+      background: #21262d;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .ai-tooltip .tt-edit {
+      margin-bottom: 6px;
+      padding: 6px 8px;
+      background: #12261e;
+      border-radius: 4px;
+      font-family: 'SF Mono', monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #aff5b4;
+      max-height: 150px;
+      overflow: auto;
+    }
+
+    .ai-tooltip .tt-edit-header {
+      color: #8b949e;
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+
+    /* Center panel — diff view */
+    .diff-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .diff-header {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid #30363d;
+      background: #161b22;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .diff-header .commit-msg {
+      color: #f0f6fc;
+    }
+
+    .diff-header .commit-time {
+      color: #8b949e;
+      font-weight: 400;
+      font-size: 12px;
+    }
+
+    .diff-content {
+      overflow: auto;
+      flex: 1;
+      padding: 0;
+    }
+
+    .diff-file-header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      border-top: 1px solid #30363d;
+      padding: 6px 16px;
+      font-size: 12px;
+      font-family: 'SF Mono', monospace;
+      color: #8b949e;
+      margin-top: 8px;
+    }
+
+    .diff-file-header:first-child {
+      margin-top: 0;
+    }
+
+    table.diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 20px;
+    }
+
+    .diff-table td {
+      padding: 0 10px;
+      vertical-align: top;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .diff-table .line-num {
+      color: #484f58;
+      text-align: right;
+      width: 50px;
+      min-width: 50px;
+      user-select: none;
+      padding-right: 10px;
+      border-right: 1px solid #30363d;
+    }
+
+    .diff-table tr.addition {
+      background: #12261e;
+    }
+
+    .diff-table tr.addition td.line-content {
+      color: #aff5b4;
+    }
+
+    .diff-table tr.deletion {
+      background: #2d1215;
+    }
+
+    .diff-table tr.deletion td.line-content {
+      color: #ffa198;
+    }
+
+    .diff-table tr.hunk-header {
+      background: #161b22;
+    }
+
+    .diff-table tr.hunk-header td {
+      color: #79c0ff;
+    }
+
+    .diff-table tr.context td.line-content {
+      color: #8b949e;
+    }
+
+    /* Right panel — chat */
+    .chat-panel {
+      width: 360px;
+      background: #0d1117;
+      border-left: 1px solid #30363d;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .chat-panel-header {
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+      background: #161b22;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .chat-search-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #1c2128;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .chat-search-bar input {
+      flex: 1;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+    }
+
+    .chat-search-bar input:focus {
+      border-color: #1f6feb;
+    }
+
+    .chat-search-bar .search-info {
+      font-size: 11px;
+      color: #8b949e;
+      white-space: nowrap;
+      min-width: 50px;
+      text-align: center;
+    }
+
+    .chat-search-bar .search-nav {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .chat-search-bar .search-nav:hover {
+      background: #30363d;
+    }
+
+    .chat-search-bar .search-clear {
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0 4px;
+    }
+
+    .chat-search-bar .search-clear:hover {
+      color: #c9d1d9;
+    }
+
+    .chat-list {
+      overflow-y: auto;
+      flex: 1;
+      padding: 8px;
+    }
+
+    .chat-bubble.search-hidden {
+      display: none;
+    }
+
+    .chat-bubble .text mark {
+      background: #f7c94b33;
+      color: inherit;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+
+    .chat-bubble .text mark.current {
+      background: #f7c94b88;
+      outline: 1px solid #f7c94b;
+    }
+
+    .chat-bubble {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .chat-bubble.user {
+      background: #1f6feb;
+      color: #fff;
+      margin-left: 24px;
+    }
+
+    .chat-bubble.action {
+      background: #6e40c9;
+      color: #e2d5f6;
+      margin-left: 24px;
+      font-size: 12px;
+    }
+
+    .chat-bubble.assistant {
+      background: #21262d;
+      color: #c9d1d9;
+      margin-right: 24px;
+    }
+
+    .chat-bubble .meta {
+      font-size: 11px;
+      color: #8b949e;
+      margin-bottom: 4px;
+    }
+
+    .chat-bubble.user .meta {
+      color: #a5d6ff;
+    }
+
+    .chat-bubble .text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .chat-bubble.active {
+      outline: 2px solid #f78166;
+    }
+
+    /* Bottom bar — timeline */
+    .timeline-bar {
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      padding: 8px 16px;
+      flex-shrink: 0;
+    }
+
+    .timeline-track {
+      position: relative;
+      height: 32px;
+      background: #21262d;
+      border-radius: 4px;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .timeline-marker {
+      position: absolute;
+      top: 0;
+      width: 3px;
+      height: 100%;
+      border-radius: 1px;
+    }
+
+    .timeline-marker.git {
+      background: #3fb950;
+      opacity: 0.6;
+    }
+
+    .timeline-marker.ai-edit {
+      background: #d29922;
+      opacity: 0.7;
+    }
+
+    .timeline-marker.ai-edit-low {
+      background: #d29922;
+      opacity: 0.35;
+    }
+
+    .timeline-marker.likely-external {
+      background: #f0883e;
+      opacity: 0.6;
+    }
+
+    .timeline-marker.chat {
+      background: #1f6feb;
+      opacity: 0.8;
+    }
+
+    .timeline-marker.action {
+      background: #a371f7;
+      opacity: 0.6;
+    }
+
+    .timeline-marker.active {
+      opacity: 1;
+      outline: 2px solid #f0f6fc;
+      z-index: 2;
+    }
+
+    .timeline-session-boundary {
+      position: absolute;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      background: rgba(255,255,255,0.18);
+      z-index: 3;
+      cursor: default;
+    }
+    .timeline-session-boundary::after {
+      content: attr(data-label);
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #8b949e;
+      white-space: nowrap;
+      pointer-events: none;
+      display: none;
+    }
+    .timeline-session-boundary:hover::after {
+      display: block;
+    }
+
+    .timeline-cursor {
+      position: absolute;
+      top: -2px;
+      width: 3px;
+      height: 36px;
+      background: #f78166;
+      border-radius: 2px;
+      z-index: 3;
+      pointer-events: none;
+    }
+
+    .timeline-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #484f58;
+      margin-top: 4px;
+    }
+
+    .timeline-legend {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+      font-size: 11px;
+      color: #8b949e;
+    }
+
+    .timeline-legend span::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    .timeline-legend .git-legend::before {
+      background: #3fb950;
+    }
+
+    .timeline-legend .chat-legend::before {
+      background: #1f6feb;
+    }
+
+    .timeline-legend .action-legend::before {
+      background: #a371f7;
+    }
+
+    .timeline-legend .ai-legend::before {
+      background: #d29922;
+    }
+
+    .timeline-legend .external-legend::before {
+      background: #f0883e;
+    }
+
+    .legend-sep {
+      color: #30363d;
+      margin: 0 2px;
+      user-select: none;
+    }
+
+    .file-type-select {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .legend-toggle {
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .legend-toggle:hover {
+      background: #21262d;
+    }
+
+    .legend-toggle.inactive {
+      opacity: 0.35;
+      text-decoration: line-through;
+    }
+
+    .spacing-toggle {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 2px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .spacing-toggle:hover {
+      background: #30363d;
+    }
+
+    table.source-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 20px;
+    }
+
+    .source-table td {
+      padding: 0 10px;
+      vertical-align: top;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .source-table .line-num {
+      color: #484f58;
+      text-align: right;
+      width: 50px;
+      min-width: 50px;
+      user-select: none;
+      padding-right: 10px;
+      border-right: 1px solid #30363d;
+    }
+
+    .source-table .line-content {
+      color: #c9d1d9;
+    }
+
+    .file-item.selected {
+      background: #1f6feb33;
+      color: #58a6ff;
+    }
+
+    .folder-item {
+      padding: 3px 0;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #8b949e;
+    }
+
+    .folder-item:hover {
+      color: #c9d1d9;
+    }
+
+    .folder-item .arrow {
+      display: inline-block;
+      width: 12px;
+      text-align: center;
+      font-size: 10px;
+      transition: transform 0.1s;
+    }
+
+    .folder-item .arrow.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .folder-children {
+      overflow: hidden;
+    }
+
+    .folder-children.collapsed {
+      display: none;
+    }
+
+    .tree-file {
+      padding: 3px 0 3px 4px;
+      font-size: 12px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tree-file:hover {
+      background: #161b22;
+    }
+
+    .tree-file.selected {
+      background: #1f6feb33;
+      color: #58a6ff;
+    }
+
+    .tree-file.changed {
+      font-weight: 600;
+    }
+
+    /* Project + Student selectors */
+    .project-select {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #79c0ff;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      max-width: 160px;
+      font-weight: 600;
+    }
+
+    .student-select {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'SF Mono', monospace;
+      max-width: 200px;
+    }
+
+    /* File filter bar */
+    .filter-bar {
+      display: none;
+      padding: 4px 8px;
+      background: #1c2128;
+      border-bottom: 1px solid #30363d;
+      font-size: 11px;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .filter-bar.active {
+      display: flex;
+    }
+
+    .filter-bar .filter-label {
+      color: #8b949e;
+    }
+
+    .filter-bar .filter-path {
+      color: #58a6ff;
+      font-family: 'SF Mono', monospace;
+    }
+
+    .filter-bar .filter-clear {
+      background: none;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 1px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      margin-left: auto;
+    }
+
+    .filter-bar .filter-clear:hover {
+      background: #30363d;
+    }
+
+    .timeline-marker.dimmed {
+      opacity: 0.12;
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #484f58;
+      font-size: 14px;
+    }
+
+    .overview-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 2px;
+      cursor: pointer;
+      padding: 2px 0;
+    }
+
+    .overview-row:hover {
+      background: #161b22;
+    }
+
+    .overview-label {
+      font-size: 11px;
+      font-family: 'SF Mono', monospace;
+      color: #8b949e;
+      width: 100px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+
+    .overview-bar {
+      flex: 1;
+      height: 18px;
+      background: #21262d;
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .overview-marker {
+      position: absolute;
+      top: 0;
+      height: 100%;
+      min-width: 2px;
+    }
+
+    /* Load dialog */
+    .load-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .load-dialog {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90%;
+      text-align: center;
+    }
+
+    .load-dialog h2 {
+      font-size: 18px;
+      color: #f0f6fc;
+      margin-bottom: 16px;
+    }
+
+    .load-dialog p {
+      font-size: 13px;
+      color: #8b949e;
+      margin-bottom: 16px;
+    }
+
+    .load-dialog input[type="file"] {
+      display: none;
+    }
+
+    .load-dialog .drop-zone {
+      border: 2px dashed #30363d;
+      border-radius: 8px;
+      padding: 40px 20px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .load-dialog .drop-zone:hover,
+    .load-dialog .drop-zone.dragover {
+      border-color: #1f6feb;
+    }
+
+    .load-dialog .drop-zone p {
+      color: #58a6ff;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Load dialog -->
+  <div class="load-overlay" id="loadOverlay">
+    <div class="load-dialog">
+      <h2>Replay Viewer</h2>
+      <p>Load a timeline.json file generated by build_timeline.py</p>
+      <div class="drop-zone" id="dropZone">
+        <p>Drop timeline.json here or click to browse</p>
+        <input type="file" id="fileInput" accept=".json">
+      </div>
+    </div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <h1 id="titleText">Replay Viewer</h1>
+    <select class="project-select" id="projectSelect" style="display:none"
+      onchange="switchProject(this.value)"></select>
+    <select class="student-select" id="studentSelect" style="display:none"
+      onchange="switchStudent(this.value)"></select>
+    <span class="stats" id="statsText"></span>
+    <div style="flex:1"></div>
+    <button class="nav-btn" id="overviewBtn" onclick="toggleOverview()" style="display:none">Overview</button>
+    <button class="nav-btn" onclick="navigate(-1)">&larr; Prev</button>
+    <span class="event-counter" id="eventCounter">0 / 0</span>
+    <button class="nav-btn" onclick="navigate(1)">Next &rarr;</button>
+  </div>
+
+  <!-- Overview panel -->
+  <div id="overviewPanel"
+    style="display:none;position:fixed;left:0;right:0;top:40px;bottom:0;background:#0d1117;z-index:50;overflow-y:auto;padding:16px;">
+    <div id="overviewContent"></div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <!-- File tree -->
+    <div class="file-panel">
+      <div class="file-panel-header" id="filePanelHeader">Changed Files</div>
+      <div class="filter-bar" id="filterBar">
+        <span class="filter-label">Filter:</span>
+        <span class="filter-path" id="filterPath"></span>
+        <button class="filter-clear" onclick="clearFileFilter()">Clear</button>
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+
+    <!-- Diff view -->
+    <div class="diff-panel">
+      <div class="diff-header">
+        <span class="commit-msg" id="diffTitle">Select an event</span>
+        <span class="commit-time" id="diffTime"></span>
+        <div style="flex:1"></div>
+        <button class="spacing-toggle" id="viewToggle" onclick="toggleView()">View: Diff</button>
+      </div>
+      <div class="diff-content" id="diffContent">
+        <div class="empty-state">Load a timeline to begin</div>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div class="chat-panel">
+      <div class="chat-panel-header">
+        <span>Chat History</span>
+        <div style="flex:1"></div>
+        <button class="nav-btn" id="chatViewToggle" onclick="toggleChatView()"
+          style="font-size:11px;padding:2px 8px;">Stats</button>
+        <span id="chatCount" style="font-weight:400"></span>
+      </div>
+      <div class="chat-search-bar" id="chatSearchBar">
+        <input type="text" id="chatSearchInput" placeholder="Search chat history..." />
+        <span class="search-info" id="searchInfo"></span>
+        <button class="search-nav" onclick="searchNavigate(-1)" title="Previous match">&#9650;</button>
+        <button class="search-nav" onclick="searchNavigate(1)" title="Next match">&#9660;</button>
+        <button class="search-clear" onclick="clearSearch()" title="Clear search">&times;</button>
+      </div>
+      <div class="chat-list" id="chatList"></div>
+      <div id="chatStatsPanel" style="display:none;overflow-y:auto;flex:1;padding:12px;">
+        <canvas id="specChart" style="width:100%;max-height:220px;"></canvas>
+        <canvas id="catChart" style="width:100%;max-height:220px;margin-top:16px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="timeline-bar">
+    <div class="timeline-track" id="timelineTrack"></div>
+    <div class="timeline-labels">
+      <span id="timeStart"></span>
+      <span id="timeEnd"></span>
+    </div>
+    <div class="timeline-legend">
+      <span class="legend-toggle" id="filterHuman" onclick="toggleTypeFilter('human')"><span class="git-legend">Human
+          Edits</span></span>
+      <span class="legend-toggle" id="filterAi" onclick="toggleTypeFilter('ai')"><span class="ai-legend">Copilot
+          Edits</span></span>
+      <span class="legend-toggle" id="filterOtherAi" onclick="toggleTypeFilter('external')"><span
+          class="external-legend">External</span></span>
+      <span class="legend-toggle" id="filterChat" onclick="toggleTypeFilter('chat')"><span
+          class="chat-legend">Prompts</span></span>
+      <span class="legend-toggle" id="filterCommand" onclick="toggleTypeFilter('command')"><span
+          class="action-legend">Copilot Commands</span></span>
+      <span class="legend-sep">|</span>
+      <select class="file-type-select" id="fileTypeSelect" onchange="setFileTypeFilter(this.value)">
+        <option value="all">All files</option>
+        <option value="code">Code only (.py, .ts, ...)</option>
+        <option value="docs">Docs only (.md, .txt, ...)</option>
+        <option value="config">Config only (.yaml, .toml, ...)</option>
+        <option value="other">Other files</option>
+      </select>
+      <div style="flex:1"></div>
+      <button class="spacing-toggle" id="spacingToggle" onclick="toggleSpacing()">Spacing: Time</button>
+    </div>
+  </div>
+
+  <script>
+    let timeline = null;
+    let currentIndex = -1;
+    let markers = [];
+    let spacingMode = 'time'; // 'time' or 'event'
+    let viewMode = 'diff'; // 'diff' or 'source'
+    let selectedFilePath = null; // selected file in source mode
+    let expandedFolders = new Set(); // track expanded folder paths across re-renders
+    let serverMode = false; // true when served from build_timeline.py
+    let allFilesCache = {}; // commit_hash -> [file paths]
+    let fileFilter = null; // when set, only show events touching this file path
+    let currentStudent = null; // current student hash
+    let typeFilters = { human: true, ai: true, external: true, chat: true, command: true };
+    let fileTypeFilter = 'all'; // 'all', 'code', 'docs', 'config', 'other'
+    let chatViewMode = 'list'; // 'list' or 'stats'
+    let specChartInstance = null;
+    let catChartInstance = null;
+
+    function toggleView() {
+      viewMode = viewMode === 'diff' ? 'source' : 'diff';
+      document.getElementById('viewToggle').textContent =
+        'View: ' + (viewMode === 'diff' ? 'Diff' : 'Source');
+      if (timeline && currentIndex >= 0) selectEvent(currentIndex);
+    }
+
+    function toggleSpacing() {
+      spacingMode = spacingMode === 'time' ? 'event' : 'time';
+      document.getElementById('spacingToggle').textContent =
+        'Spacing: ' + (spacingMode === 'time' ? 'Time' : 'Event');
+      if (timeline) { buildTimeline(); selectEvent(currentIndex); }
+    }
+
+    // --- File loading ---
+    const overlay = document.getElementById('loadOverlay');
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) loadFile(file);
+    });
+    fileInput.addEventListener('change', e => {
+      if (e.target.files[0]) loadFile(e.target.files[0]);
+    });
+
+    function loadFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          timeline = JSON.parse(e.target.result);
+          overlay.style.display = 'none';
+          initViewer();
+        } catch (err) {
+          alert('Failed to parse JSON: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    async function switchStudent(hash) {
+      if (!hash) return;
+      currentStudent = hash;
+      allFilesCache = {};
+      fileFilter = null;
+      document.getElementById('filterBar').classList.remove('active');
+      expandedFolders.clear();
+      selectedFilePath = null;
+      // Reset file type dropdown
+      fileTypeFilter = 'all';
+      const ftSel = document.getElementById('fileTypeSelect');
+      if (ftSel) ftSel.value = 'all';
+      // Reset chat view to list
+      chatViewMode = 'list';
+      document.getElementById('chatViewToggle').textContent = 'Stats';
+      document.getElementById('chatList').style.display = '';
+      document.getElementById('chatSearchBar').style.display = '';
+      document.getElementById('chatStatsPanel').style.display = 'none';
+
+      document.getElementById('statsText').textContent = 'Loading...';
+      try {
+        const projectParam = currentProject ? `&project=${encodeURIComponent(currentProject)}` : '';
+        const resp = await fetch(`/api/timeline?student=${hash}${projectParam}`);
+        timeline = await resp.json();
+        initViewer();
+      } catch (err) {
+        document.getElementById('statsText').textContent = 'Failed to load';
+      }
+    }
+
+    // Try to auto-load from server
+    let currentProject = null;
+
+    function loadStudents(project) {
+      const url = project ? `/api/students?project=${encodeURIComponent(project)}` : '/api/students';
+      return fetch(url).then(r => r.json()).then(students => {
+        serverMode = true;
+        const sel = document.getElementById('studentSelect');
+        sel.innerHTML = '';
+        if (students.length > 1) {
+          document.getElementById('overviewBtn').style.display = '';
+          sel.style.display = '';
+          students.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.hash;
+            opt.textContent = s.short + '...';
+            sel.appendChild(opt);
+          });
+        } else {
+          sel.style.display = 'none';
+        }
+        const first = students[0]?.hash;
+        if (first) switchStudent(first);
+      });
+    }
+
+    function switchProject(project) {
+      currentProject = project;
+      overviewCache = null;
+      loadStudents(project);
+      if (overviewOpen) loadOverview();
+    }
+
+    fetch('/api/projects').then(r => r.json()).then(projects => {
+      if (projects.length > 1) {
+        const psel = document.getElementById('projectSelect');
+        psel.style.display = '';
+        projects.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p;
+          opt.textContent = p;
+          psel.appendChild(opt);
+        });
+        currentProject = projects[0];
+      }
+      loadStudents(currentProject);
+    }).catch(() => {
+      // No /api/projects — single-project server, load students directly
+      loadStudents(null).catch(() => {
+        // Not served — try legacy single-student endpoint
+        fetch('/api/timeline').then(r => r.json()).then(data => {
+          serverMode = true;
+          timeline = data;
+          overlay.style.display = 'none';
+          initViewer();
+        }).catch(() => { /* not served — show file drop dialog */ });
+      });
+    });
+
+    // --- Keyboard navigation ---
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === 'j') navigate(1);
+      if (e.key === 'ArrowLeft' || e.key === 'k') navigate(-1);
+    });
+
+    // --- Init ---
+    function initViewer() {
+      if (!timeline || !timeline.events.length) return;
+      overlay.style.display = 'none';
+
+      document.getElementById('titleText').textContent =
+        'Replay: ' + (timeline.student_hash || '').slice(0, 12) + '...';
+      document.getElementById('statsText').textContent =
+        `${timeline.git_commits} edits, ${timeline.chat_prompts} prompts` +
+        (timeline.chat_actions ? `, ${timeline.chat_actions} commands` : '');
+
+      buildTimeline();
+      buildChatList();
+      selectEvent(0);
+    }
+
+    // --- Event type classification ---
+    function getMarkerType(evt) {
+      if (evt.type === 'git_commit') {
+        const files = evt.changed_files || [];
+        const hasHighAi = files.some(f => f.ai_attributed && (f.ai_info?.confidence || 'high') === 'high');
+        const hasLowAi = !hasHighAi && files.some(f => f.ai_attributed && f.ai_info?.confidence === 'low');
+        if (hasHighAi || hasLowAi) return 'ai';
+        if (files.some(f => f.likely_external)) return 'external';
+        return 'human';
+      }
+      if (evt.type === 'chat_action') return 'command';
+      return 'chat';
+    }
+
+    const filterIdMap = { human: 'filterHuman', ai: 'filterAi', external: 'filterOtherAi', chat: 'filterChat', command: 'filterCommand' };
+    function setFileTypeFilter(value) {
+      fileTypeFilter = value;
+      applyFilterToMarkers();
+    }
+
+    function toggleTypeFilter(type) {
+      typeFilters[type] = !typeFilters[type];
+      const el = document.getElementById(filterIdMap[type]);
+      if (el) el.classList.toggle('inactive', !typeFilters[type]);
+      applyFilterToMarkers();
+    }
+
+
+    // --- Timeline bar ---
+    function buildTimeline() {
+      const track = document.getElementById('timelineTrack');
+      track.innerHTML = '';
+      markers = [];
+
+      const events = timeline.events;
+      const minEpoch = events[0].epoch;
+      const maxEpoch = events[events.length - 1].epoch;
+      const range = maxEpoch - minEpoch || 1;
+
+      events.forEach((evt, i) => {
+        const pct = spacingMode === 'time'
+          ? ((evt.epoch - minEpoch) / range) * 100
+          : (i / (events.length - 1)) * 100;
+        const m = document.createElement('div');
+        const mType = getMarkerType(evt);
+        const hasHighAi = mType === 'ai' && (evt.changed_files || []).some(f => f.ai_attributed && (f.ai_info?.confidence || 'high') === 'high');
+        const markerClass = mType === 'ai' ? (hasHighAi ? 'ai-edit' : 'ai-edit-low') : mType === 'external' ? 'likely-external' : evt.type === 'git_commit' ? 'git' : evt.type === 'chat_action' ? 'action' : 'chat';
+        m.className = 'timeline-marker ' + markerClass;
+        m.dataset.markerType = mType;
+        m.style.left = pct + '%';
+        m.addEventListener('click', e => { e.stopPropagation(); selectEvent(i); });
+        track.appendChild(m);
+        markers.push(m);
+      });
+
+      // Session boundaries — gaps > 30 min between consecutive events
+      const SESSION_GAP = 1800;
+      let sessionNum = 1;
+      for (let i = 0; i + 1 < events.length; i++) {
+        const gap = (events[i + 1].epoch || 0) - (events[i].epoch || 0);
+        if (gap < SESSION_GAP) continue;
+        // Position boundary at midpoint between the two events
+        const pctA = spacingMode === 'time'
+          ? ((events[i].epoch - minEpoch) / range) * 100
+          : (i / (events.length - 1)) * 100;
+        const pctB = spacingMode === 'time'
+          ? ((events[i + 1].epoch - minEpoch) / range) * 100
+          : ((i + 1) / (events.length - 1)) * 100;
+        const pctMid = (pctA + pctB) / 2;
+        const gapMin = Math.round(gap / 60);
+        const gapLabel = gapMin >= 60
+          ? `S${sessionNum}→S${sessionNum + 1} (${Math.round(gapMin/60)}h gap)`
+          : `S${sessionNum}→S${sessionNum + 1} (${gapMin}m gap)`;
+        sessionNum++;
+        const b = document.createElement('div');
+        b.className = 'timeline-session-boundary';
+        b.style.left = pctMid + '%';
+        b.dataset.label = gapLabel;
+        track.appendChild(b);
+      }
+
+      // Click on track to jump
+      track.addEventListener('click', e => {
+        const rect = track.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        let best = 0;
+        if (spacingMode === 'event') {
+          best = Math.round(pct * (events.length - 1));
+        } else {
+          const targetEpoch = minEpoch + pct * range;
+          let bestDiff = Infinity;
+          events.forEach((evt, i) => {
+            const diff = Math.abs(evt.epoch - targetEpoch);
+            if (diff < bestDiff) { bestDiff = diff; best = i; }
+          });
+        }
+        selectEvent(best);
+      });
+
+      // Labels
+      document.getElementById('timeStart').textContent = formatTime(events[0].timestamp);
+      document.getElementById('timeEnd').textContent = formatTime(events[events.length - 1].timestamp);
+    }
+
+    // --- Chat list ---
+    function buildChatList() {
+      const chatList = document.getElementById('chatList');
+      chatList.innerHTML = '';
+      chatBubbleData = [];
+      searchMatches = [];
+      searchMatchIndex = -1;
+
+      const chatEvents = timeline.events
+        .map((e, i) => ({ ...e, globalIndex: i }))
+        .filter(e => e.type === 'chat_prompt' || e.type === 'chat_action');
+
+      const nPrompts = chatEvents.filter(e => e.type === 'chat_prompt').length;
+      const nActions = chatEvents.filter(e => e.type === 'chat_action').length;
+      document.getElementById('chatCount').textContent =
+        nPrompts + ' prompts' + (nActions ? ', ' + nActions + ' actions' : '');
+
+      chatEvents.forEach(evt => {
+        const isAction = evt.type === 'chat_action';
+        const promptText = truncate(evt.prompt, 300);
+        const userDiv = document.createElement('div');
+        userDiv.className = 'chat-bubble ' + (isAction ? 'action' : 'user');
+        userDiv.id = 'chat-' + evt.globalIndex;
+        const specBadge = evt.specificity ? `<span style="background:#58a6ff33;color:#58a6ff;font-size:10px;padding:0 4px;border-radius:3px;margin-left:6px;">S${evt.specificity}</span>` : '';
+        const catBadge = evt.behavior_category ? `<span style="font-size:10px;color:#8b949e;margin-left:4px;">${escapeHtml(evt.behavior_category)}</span>` : '';
+        userDiv.innerHTML = `<div class="meta">${formatTime(evt.timestamp)} &middot; ${escapeHtml(evt.model)}${specBadge}${catBadge}</div><div class="text">${escapeHtml(promptText)}</div>`;
+        userDiv.addEventListener('click', () => selectEvent(evt.globalIndex));
+        chatList.appendChild(userDiv);
+        chatBubbleData.push({ el: userDiv, globalIndex: evt.globalIndex, type: isAction ? 'action' : 'user', text: promptText });
+
+        // Assistant bubble
+        if (evt.response) {
+          const responseText = truncate(evt.response, 500);
+          const botDiv = document.createElement('div');
+          botDiv.className = 'chat-bubble assistant';
+          botDiv.innerHTML = `<div class="text">${escapeHtml(responseText)}</div>`;
+          chatList.appendChild(botDiv);
+          chatBubbleData.push({ el: botDiv, globalIndex: evt.globalIndex, type: 'assistant', text: responseText });
+        }
+      });
+
+      // Clear any existing search
+      clearSearch();
+    }
+
+    // --- Chat stats view ---
+    function toggleChatView() {
+      chatViewMode = chatViewMode === 'list' ? 'stats' : 'list';
+      const btn = document.getElementById('chatViewToggle');
+      btn.textContent = chatViewMode === 'list' ? 'Stats' : 'Chat';
+      document.getElementById('chatList').style.display = chatViewMode === 'list' ? '' : 'none';
+      document.getElementById('chatSearchBar').style.display = chatViewMode === 'list' ? '' : 'none';
+      document.getElementById('chatStatsPanel').style.display = chatViewMode === 'stats' ? '' : 'none';
+      if (chatViewMode === 'stats') buildChatStats();
+    }
+
+    function buildChatStats() {
+      if (!timeline) return;
+      const prompts = timeline.events.filter(e => e.type === 'chat_prompt');
+      if (!prompts.length) return;
+
+      // Specificity over prompt index
+      const specLabels = prompts.map((_, i) => i + 1);
+      const specValues = prompts.map(p => p.specificity || 0);
+      const hasSpec = specValues.some(v => v > 0);
+
+      // Rolling average (window = 5)
+      const window = Math.min(5, Math.max(1, Math.floor(prompts.length / 3)));
+      const rollingAvg = specValues.map((_, i) => {
+        const start = Math.max(0, i - Math.floor(window / 2));
+        const end = Math.min(specValues.length, i + Math.ceil(window / 2));
+        const slice = specValues.slice(start, end).filter(v => v > 0);
+        return slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
+      });
+
+      // Category distribution over time (cumulative in 3 bins: early/mid/late)
+      const catColors = { Plan: '#636efa', Code: '#00cc96', Explain: '#ef553b', Eval: '#ab63fa', Setup: '#ffa15a', Converse: '#19d3f3', Other: '#888' };
+      const cats = {};
+      prompts.forEach(p => {
+        const c = p.behavior_category || 'Other';
+        cats[c] = (cats[c] || 0) + 1;
+      });
+      const catOrder = ['Plan', 'Code', 'Explain', 'Eval', 'Setup', 'Converse', 'Other'];
+      const catLabels = catOrder.filter(c => cats[c]);
+      const catValues = catLabels.map(c => cats[c]);
+      const catColorArr = catLabels.map(c => catColors[c] || '#888');
+
+      // Destroy old charts
+      if (specChartInstance) { specChartInstance.destroy(); specChartInstance = null; }
+      if (catChartInstance) { catChartInstance.destroy(); catChartInstance = null; }
+
+      // Specificity chart
+      if (hasSpec) {
+        const ctx1 = document.getElementById('specChart').getContext('2d');
+        specChartInstance = new Chart(ctx1, {
+          type: 'bar',
+          data: {
+            labels: specLabels,
+            datasets: [
+              { label: 'Specificity', data: specValues, backgroundColor: '#58a6ff66', borderColor: '#58a6ff', borderWidth: 1, barPercentage: 0.9, categoryPercentage: 1.0, order: 2 },
+              { label: 'Rolling avg', data: rollingAvg, type: 'line', borderColor: '#f0883e', borderWidth: 2, pointRadius: 0, tension: 0.3, order: 1 },
+            ],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#8b949e', font: { size: 10 } } }, title: { display: true, text: 'Prompt Specificity Over Time', color: '#c9d1d9', font: { size: 12 } } },
+            scales: {
+              x: { title: { display: true, text: 'Prompt #', color: '#8b949e' }, ticks: { color: '#484f58', maxTicksLimit: 15 }, grid: { color: '#21262d' } },
+              y: { min: 0, max: 5, title: { display: true, text: 'Specificity (1-5)', color: '#8b949e' }, ticks: { color: '#484f58', stepSize: 1 }, grid: { color: '#21262d' } },
+            },
+          },
+        });
+      }
+
+      // Category bar chart
+      const ctx2 = document.getElementById('catChart').getContext('2d');
+      catChartInstance = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: catLabels,
+          datasets: [{ data: catValues, backgroundColor: catColorArr, borderWidth: 0 }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: { legend: { display: false }, title: { display: true, text: 'Prompt Categories', color: '#c9d1d9', font: { size: 12 } } },
+          scales: {
+            x: { title: { display: true, text: 'Count', color: '#8b949e' }, ticks: { color: '#484f58' }, grid: { color: '#21262d' } },
+            y: { ticks: { color: '#c9d1d9', font: { size: 11 } }, grid: { display: false } },
+          },
+        },
+      });
+    }
+
+    // --- Select event ---
+    function selectEvent(index) {
+      if (!timeline || index < 0 || index >= timeline.events.length) return;
+      currentIndex = index;
+      const evt = timeline.events[index];
+
+      // Update counter
+      document.getElementById('eventCounter').textContent =
+        `${index + 1} / ${timeline.events.length}`;
+
+      // Update markers
+      markers.forEach((m, i) => m.classList.toggle('active', i === index));
+
+      // Find current commit hash (for chat events, use most recent preceding commit)
+      const currentCommit = getCurrentCommit(index);
+
+      // Update diff/source panel
+      if (evt.type === 'git_commit') {
+        document.getElementById('diffTitle').textContent = evt.message;
+        document.getElementById('diffTime').textContent = formatTime(evt.timestamp);
+        if (viewMode === 'diff') {
+          renderDiff(evt);
+          renderChangedFiles(evt.changed_files);
+        } else {
+          loadFileTree(currentCommit, evt.changed_files);
+        }
+      } else {
+        document.getElementById('diffTitle').textContent = 'Chat: ' + truncate(evt.prompt, 60);
+        document.getElementById('diffTime').textContent = formatTime(evt.timestamp);
+        if (viewMode === 'source' && currentCommit) {
+          loadFileTree(currentCommit, []);
+        } else {
+          document.getElementById('diffContent').innerHTML =
+            '<div class="empty-state">Chat event — no code diff</div>';
+          renderChangedFiles([]);
+        }
+      }
+
+      // Highlight active chat bubble
+      document.querySelectorAll('.chat-bubble.active').forEach(el => el.classList.remove('active'));
+      if (evt.type === 'chat_prompt' || evt.type === 'chat_action') {
+        const bubble = document.getElementById('chat-' + index);
+        if (bubble) {
+          bubble.classList.add('active');
+          bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } else {
+        // Scroll to nearest preceding chat event
+        for (let i = index; i >= 0; i--) {
+          const t = timeline.events[i].type;
+          if (t === 'chat_prompt' || t === 'chat_action') {
+            const bubble = document.getElementById('chat-' + i);
+            if (bubble) bubble.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            break;
+          }
+        }
+      }
+    }
+
+    function eventMatchesFilter(evt) {
+      // Type filter
+      if (!typeFilters[getMarkerType(evt)]) return false;
+      // File type filter
+      if (fileTypeFilter !== 'all') {
+        // When filtering by file type, hide non-edit events (prompts, commands)
+        if (evt.type !== 'git_commit') return false;
+        const hasMatchingFt = (evt.changed_files || []).some(f => (f.file_type || 'other') === fileTypeFilter);
+        if (!hasMatchingFt) return false;
+      }
+      // File path filter
+      if (fileFilter) {
+        if (evt.type !== 'git_commit') return false;
+        return (evt.changed_files || []).some(f => f.path === fileFilter);
+      }
+      return true;
+    }
+
+    function setFileFilter(fpath) {
+      fileFilter = fpath;
+      document.getElementById('filterBar').classList.add('active');
+      document.getElementById('filterPath').textContent = fpath;
+      applyFilterToMarkers();
+      // Jump to first matching event
+      for (let i = 0; i < timeline.events.length; i++) {
+        if (eventMatchesFilter(timeline.events[i])) {
+          selectEvent(i);
+          return;
+        }
+      }
+    }
+
+    function clearFileFilter() {
+      fileFilter = null;
+      document.getElementById('filterBar').classList.remove('active');
+      applyFilterToMarkers();
+      if (currentIndex >= 0) selectEvent(currentIndex);
+    }
+
+    function applyFilterToMarkers() {
+      if (!timeline) return;
+      markers.forEach((m, i) => {
+        m.classList.toggle('dimmed', !eventMatchesFilter(timeline.events[i]));
+      });
+    }
+
+    function navigate(delta) {
+      if (!timeline) return;
+      let next = currentIndex + delta;
+      // Skip events that don't match the filter
+      while (next >= 0 && next < timeline.events.length && !eventMatchesFilter(timeline.events[next])) {
+        next += delta;
+      }
+      if (next >= 0 && next < timeline.events.length) {
+        selectEvent(next);
+      }
+    }
+
+    // --- Get current commit hash for a given event index ---
+    function getCurrentCommit(index) {
+      for (let i = index; i >= 0; i--) {
+        if (timeline.events[i].type === 'git_commit') {
+          return timeline.events[i].commit_hash;
+        }
+      }
+      return null;
+    }
+
+    // --- Build a nested tree structure from flat file paths ---
+    function buildTree(filePaths) {
+      const root = {};
+      for (const fpath of filePaths) {
+        const parts = fpath.split('/');
+        let node = root;
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (i === parts.length - 1) {
+            // File leaf
+            node[part] = fpath; // string = file, object = folder
+          } else {
+            if (!node[part] || typeof node[part] === 'string') node[part] = {};
+            node = node[part];
+          }
+        }
+      }
+      return root;
+    }
+
+    // --- Render tree into DOM ---
+    function renderTree(parentEl, tree, changedMap, commit, depth, pathPrefix) {
+      pathPrefix = pathPrefix || '';
+      // Sort: folders first, then files, both alphabetical
+      const entries = Object.keys(tree).sort((a, b) => {
+        const aIsFolder = typeof tree[a] === 'object';
+        const bIsFolder = typeof tree[b] === 'object';
+        if (aIsFolder !== bIsFolder) return aIsFolder ? -1 : 1;
+        return a.localeCompare(b);
+      });
+
+      for (const name of entries) {
+        const val = tree[name];
+        const indent = depth * 16 + 8;
+
+        if (typeof val === 'object') {
+          // Folder
+          const folderPath = pathPrefix + name + '/';
+          const isExpanded = expandedFolders.has(folderPath);
+          const folder = document.createElement('div');
+          const folderHead = document.createElement('div');
+          folderHead.className = 'folder-item';
+          folderHead.style.paddingLeft = indent + 'px';
+          folderHead.innerHTML = `<span class="arrow${isExpanded ? '' : ' collapsed'}">▼</span><span>${escapeHtml(name)}</span>`;
+
+          const children = document.createElement('div');
+          children.className = 'folder-children' + (isExpanded ? '' : ' collapsed');
+          renderTree(children, val, changedMap, commit, depth + 1, folderPath);
+
+          folderHead.addEventListener('click', () => {
+            const arrow = folderHead.querySelector('.arrow');
+            children.classList.toggle('collapsed');
+            arrow.classList.toggle('collapsed');
+            if (expandedFolders.has(folderPath)) {
+              expandedFolders.delete(folderPath);
+            } else {
+              expandedFolders.add(folderPath);
+            }
+          });
+
+          folder.appendChild(folderHead);
+          folder.appendChild(children);
+          parentEl.appendChild(folder);
+        } else {
+          // File
+          const fpath = val;
+          const div = document.createElement('div');
+          const isChanged = changedMap.hasOwnProperty(fpath);
+          const isSelected = fpath === selectedFilePath;
+          div.className = 'tree-file' + (isChanged ? ' changed' : '') + (isSelected ? ' selected' : '');
+          div.style.paddingLeft = (indent + 16) + 'px';
+          div.dataset.path = fpath;
+
+          let statusHtml = '';
+          const fileInfo = changedMap[fpath];
+          if (isChanged && fileInfo) {
+            const st = fileInfo.status || 'M';
+            const label = st === 'A' ? '+' : st === 'D' ? '-' : '~';
+            statusHtml = `<span class="status ${st}">${label}</span>`;
+          }
+          let aiHtml = '';
+          if (fileInfo && fileInfo.ai_attributed) {
+            aiHtml = aiBadgeHtml(fileInfo.ai_info, 'margin-left:auto');
+          } else if (fileInfo && fileInfo.likely_external) {
+            aiHtml = otherAiBadgeHtml(fileInfo.added_chars, 'margin-left:auto');
+          }
+          div.innerHTML = statusHtml + `<span>${escapeHtml(name)}</span>` + aiHtml;
+          div.addEventListener('click', () => {
+            selectedFilePath = fpath;
+            fetchAndRenderFile(commit, fpath);
+            parentEl.closest('.file-list').querySelectorAll('.tree-file').forEach(el => el.classList.remove('selected'));
+            div.classList.add('selected');
+          });
+          div.addEventListener('dblclick', () => {
+            setFileFilter(fpath);
+          });
+          // AI badge click in tree
+          const treeBadge = div.querySelector('.ai-badge');
+          if (treeBadge && fileInfo && fileInfo.ai_info) {
+            treeBadge.addEventListener('click', (e) => {
+              e.stopPropagation();
+              showAiTooltip(e, fileInfo.ai_info);
+            });
+          }
+          parentEl.appendChild(div);
+        }
+      }
+    }
+
+    // --- Load full file tree from server for source mode ---
+    async function loadFileTree(commit, changedFiles) {
+      const fileList = document.getElementById('fileList');
+      const header = document.getElementById('filePanelHeader');
+      const changedMap = {};
+      (changedFiles || []).forEach(f => { changedMap[f.path] = f; });
+
+      if (!serverMode || !commit) {
+        renderChangedFiles(changedFiles);
+        return;
+      }
+
+      // Fetch file tree from server (with cache)
+      let files;
+      if (allFilesCache[commit]) {
+        files = allFilesCache[commit];
+      } else {
+        try {
+          const projectParam = currentProject ? '&project=' + encodeURIComponent(currentProject) : '';
+          const resp = await fetch(`/api/files?commit=${commit}${currentStudent ? '&student=' + currentStudent : ''}${projectParam}`);
+          files = await resp.json();
+          allFilesCache[commit] = files;
+        } catch {
+          files = [];
+        }
+      }
+
+      header.textContent = `Files (${files.length})`;
+      fileList.innerHTML = '';
+
+      // Auto-select first changed file if nothing selected
+      if (!selectedFilePath && changedFiles && changedFiles.length > 0) {
+        selectedFilePath = changedFiles[0].path;
+      }
+
+      // Build and render folder tree
+      const tree = buildTree(files);
+      renderTree(fileList, tree, changedMap, commit, 0);
+
+      // Render selected file
+      if (selectedFilePath) {
+        fetchAndRenderFile(commit, selectedFilePath);
+        const sel = fileList.querySelector('.tree-file.selected');
+        if (sel) sel.scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    // --- Fetch and render a single file from server ---
+    async function fetchAndRenderFile(commit, fpath) {
+      const container = document.getElementById('diffContent');
+      if (!serverMode || !commit || !fpath) {
+        container.innerHTML = '<div class="empty-state">Source view requires server mode (--serve)</div>';
+        return;
+      }
+
+      container.innerHTML = '<div class="empty-state">Loading...</div>';
+      try {
+        const projectParam = currentProject ? '&project=' + encodeURIComponent(currentProject) : '';
+        const resp = await fetch(`/api/file?commit=${encodeURIComponent(commit)}&path=${encodeURIComponent(fpath)}${currentStudent ? '&student=' + currentStudent : ''}${projectParam}`);
+        const data = await resp.json();
+        if (data.error) {
+          container.innerHTML = `<div class="empty-state">${escapeHtml(data.error)}</div>`;
+          return;
+        }
+        renderFileContent(fpath, data.content);
+      } catch (err) {
+        container.innerHTML = `<div class="empty-state">Error: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    // --- Render file content ---
+    function renderFileContent(fpath, content) {
+      const container = document.getElementById('diffContent');
+      const lines = content.split('\n');
+      let html = `<div class="diff-file-header">${escapeHtml(fpath)}</div>`;
+      html += '<table class="source-table">';
+      lines.forEach((line, i) => {
+        html += `<tr><td class="line-num">${i + 1}</td><td class="line-content">${escapeHtml(line)}</td></tr>`;
+      });
+      html += '</table>';
+      container.innerHTML = html;
+    }
+
+    // --- Render changed files list (diff mode / fallback) ---
+    function renderChangedFiles(files) {
+      const fileList = document.getElementById('fileList');
+      const header = document.getElementById('filePanelHeader');
+
+      if (!files || files.length === 0) {
+        header.textContent = 'Changed Files';
+        fileList.innerHTML = '<div class="empty-state" style="font-size:12px;">No file changes</div>';
+        return;
+      }
+
+      header.textContent = `Changed Files (${files.length})`;
+      fileList.innerHTML = '';
+
+      const nAiHigh = files.filter(f => f.ai_attributed && (f.ai_info?.confidence || 'high') === 'high').length;
+      const nAiLow = files.filter(f => f.ai_attributed && f.ai_info?.confidence === 'low').length;
+      const nOtherAi = files.filter(f => f.likely_external).length;
+      if (nAiHigh > 0 || nAiLow > 0 || nOtherAi > 0) {
+        let label = `Changed Files (${files.length}) —`;
+        if (nAiHigh > 0) label += ` ${nAiHigh} AI`;
+        if (nAiLow > 0) label += ` ${nAiLow} AI (low)`;
+        if (nOtherAi > 0) label += ` ${nOtherAi} External`;
+        header.textContent = label;
+      }
+
+      files.forEach(f => {
+        const div = document.createElement('div');
+        div.className = 'file-item changed';
+        const statusLabel = f.status === 'A' ? '+' : f.status === 'D' ? '-' : '~';
+        let html = `<span class="status ${f.status}">${statusLabel}</span><span>${escapeHtml(f.path)}</span>`;
+        if (f.ai_attributed) {
+          html += aiBadgeHtml(f.ai_info);
+        } else if (f.likely_external) {
+          html += otherAiBadgeHtml(f.added_chars);
+        }
+        div.innerHTML = html;
+        div.addEventListener('dblclick', () => { setFileFilter(f.path); });
+        div.title = 'Double-click to filter timeline to this file';
+        // AI badge click
+        const badge = div.querySelector('.ai-badge');
+        if (badge && f.ai_info) {
+          badge.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showAiTooltip(e, f.ai_info);
+          });
+        }
+        fileList.appendChild(div);
+      });
+    }
+
+    // --- Render diff ---
+    function renderDiff(evt) {
+      const container = document.getElementById('diffContent');
+      if (!evt.diff) {
+        container.innerHTML = '<div class="empty-state">No diff available</div>';
+        return;
+      }
+
+      // Build a map of changed files for AI attribution lookup
+      const cfMap = {};
+      (evt.changed_files || []).forEach(f => { cfMap[f.path] = f; });
+
+      const lines = evt.diff.split('\n');
+      let html = '';
+      let currentFile = '';
+      let oldLine = 0, newLine = 0;
+
+      for (const line of lines) {
+        // File header — render immediately when we see diff --git
+        if (line.startsWith('diff --git')) {
+          if (currentFile) html += '</table>';  // close previous file's table
+          const match = line.match(/ b\/(.+)$/);
+          currentFile = match ? match[1] : '';
+          const cf = cfMap[currentFile];
+          const badge = (cf && cf.ai_attributed) ? ' ' + aiBadgeHtml(cf.ai_info) : (cf && cf.likely_external) ? ' ' + otherAiBadgeHtml(cf.added_chars) : '';
+          html += `<div class="diff-file-header">${escapeHtml(currentFile)}${badge}</div>`;
+          html += '<table class="diff-table">';
+          continue;
+        }
+        if (line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')
+          || line.startsWith('new file') || line.startsWith('deleted file')
+          || line.startsWith('old mode') || line.startsWith('new mode')
+          || line.startsWith('similarity') || line.startsWith('rename ')
+          || line.startsWith('Binary files')) {
+          continue;
+        }
+
+        // Hunk header
+        if (line.startsWith('@@')) {
+          const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+          if (match) {
+            oldLine = parseInt(match[1]);
+            newLine = parseInt(match[2]);
+          }
+          html += `<tr class="hunk-header"><td class="line-num"></td><td class="line-num"></td><td class="line-content">${escapeHtml(line)}</td></tr>`;
+          continue;
+        }
+
+        // Diff lines
+        if (line.startsWith('+')) {
+          html += `<tr class="addition"><td class="line-num"></td><td class="line-num">${newLine}</td><td class="line-content">${escapeHtml(line.slice(1))}</td></tr>`;
+          newLine++;
+        } else if (line.startsWith('-')) {
+          html += `<tr class="deletion"><td class="line-num">${oldLine}</td><td class="line-num"></td><td class="line-content">${escapeHtml(line.slice(1))}</td></tr>`;
+          oldLine++;
+        } else if (line.startsWith(' ')) {
+          html += `<tr class="context"><td class="line-num">${oldLine}</td><td class="line-num">${newLine}</td><td class="line-content">${escapeHtml(line.slice(1))}</td></tr>`;
+          oldLine++;
+          newLine++;
+        }
+      }
+      html += '</table>';
+      container.innerHTML = html;
+
+      // Attach click handlers to AI badges in diff headers
+      container.querySelectorAll('.ai-badge[data-ai]').forEach(badge => {
+        badge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showAiTooltip(e, JSON.parse(badge.dataset.ai));
+        });
+      });
+    }
+
+    // --- Helpers ---
+    function aiBadgeHtml(aiInfo, extraStyle) {
+      const conf = aiInfo.confidence || 'high';
+      const cls = conf === 'low' ? 'ai-badge low-confidence' : 'ai-badge high-confidence';
+      const label = 'AI';
+      const style = extraStyle ? ` style="${extraStyle}"` : '';
+      const dataAttr = ` data-ai='${JSON.stringify(aiInfo).replace(/'/g, "&#39;")}'`;
+      const sign = aiInfo.delta_seconds >= 0 ? '+' : '';
+      return `<span class="${cls}"${style}${dataAttr}>${label} ${sign}${aiInfo.delta_seconds}s</span>`;
+    }
+
+    function otherAiBadgeHtml(addedChars, extraStyle) {
+      const style = extraStyle ? ` style="${extraStyle}"` : '';
+      return `<span class="ai-badge external"${style} title="Large insertion (${addedChars} chars) not matched to Copilot — possibly from another AI tool">External ${addedChars}c</span>`;
+    }
+
+    function formatTime(ts) {
+      try {
+        const d = new Date(ts);
+        return d.toLocaleString('en-US', {
+          month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          hour12: false
+        });
+      } catch { return ts; }
+    }
+
+    // --- AI attribution tooltip ---
+    let activeTooltip = null;
+
+    function showAiTooltip(e, aiInfo) {
+      hideAiTooltip();
+      const tt = document.createElement('div');
+      tt.className = 'ai-tooltip';
+
+      const delta = aiInfo.delta_seconds;
+      const sign = delta >= 0 ? '+' : '';
+
+      // Raw TEG text: concatenate all edit texts into one block
+      const rawText = (aiInfo.edits || []).map(e => e.text).filter(Boolean).join('\n');
+
+      let editsHtml = '';
+      for (const edit of (aiInfo.edits || [])) {
+        const lineRange = edit.start_line === edit.end_line
+          ? `L${edit.start_line}` : `L${edit.start_line}-L${edit.end_line}`;
+        editsHtml += `<div class="tt-edit-header">${lineRange} (${edit.lines} lines)</div>`;
+        editsHtml += `<div class="tt-edit">${escapeHtml(edit.text)}</div>`;
+      }
+
+      const conf = aiInfo.confidence || 'high';
+      const headerLabel = conf === 'low' ? 'AI-Generated Edit (Low Confidence)' : 'AI-Generated Edit';
+      const headerColor = conf === 'low' ? '#d29922' : '#a371f7';
+
+      tt.innerHTML =
+        `<div class="tt-header" style="color:${headerColor}">${headerLabel}</div>` +
+        `<div class="tt-meta">TEG at ${aiInfo.teg_timestamp || '?'} (${sign}${delta}s from commit)` +
+        (aiInfo.match_score != null ? ` | match: ${Math.round(aiInfo.match_score * 100)}%` : '') + `</div>` +
+        `<div style="color:#8b949e;font-size:11px;margin-bottom:2px;">Closest preceding user prompt:</div>` +
+        `<div class="tt-prompt">${escapeHtml(aiInfo.prompt)}</div>` +
+        `<div style="color:#8b949e;font-size:11px;margin-bottom:2px;">Raw TEG text (AI-generated code):</div>` +
+        `<div class="tt-edit">${escapeHtml(rawText)}</div>` +
+        `<div style="color:#8b949e;font-size:11px;margin:6px 0 2px;">Per-range breakdown:</div>` +
+        editsHtml;
+
+      document.body.appendChild(tt);
+      activeTooltip = tt;
+
+      // Position near click
+      const rect = tt.getBoundingClientRect();
+      let x = e.clientX + 8;
+      let y = e.clientY + 8;
+      if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 8;
+      if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 8;
+      tt.style.left = x + 'px';
+      tt.style.top = y + 'px';
+
+      // Close on click outside
+      setTimeout(() => {
+        document.addEventListener('click', hideAiTooltip, { once: true });
+      }, 0);
+    }
+
+    function hideAiTooltip() {
+      if (activeTooltip) {
+        activeTooltip.remove();
+        activeTooltip = null;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function truncate(str, len) {
+      if (!str) return '';
+      return str.length > len ? str.slice(0, len) + '...' : str;
+    }
+
+    // --- Chat search ---
+    let searchMatches = [];   // indices into chatBubbleData
+    let searchMatchIndex = -1;
+    let chatBubbleData = [];  // [{el, globalIndex, type:'user'|'assistant', text}]
+    let searchDebounceTimer = null;
+
+    document.getElementById('chatSearchInput').addEventListener('input', e => {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => performSearch(e.target.value), 150);
+    });
+    document.getElementById('chatSearchInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        searchNavigate(e.shiftKey ? -1 : 1);
+      }
+      if (e.key === 'Escape') {
+        clearSearch();
+        e.target.blur();
+      }
+    });
+
+    function performSearch(query) {
+      const q = query.trim().toLowerCase();
+      searchMatches = [];
+      searchMatchIndex = -1;
+
+      // Reset all bubbles
+      chatBubbleData.forEach(b => {
+        b.el.classList.remove('search-hidden');
+        // Restore original text (strip highlights)
+        const textEl = b.el.querySelector('.text');
+        if (textEl) textEl.innerHTML = escapeHtml(b.text);
+      });
+
+      if (!q) {
+        document.getElementById('searchInfo').textContent = '';
+        return;
+      }
+
+      // Find matches and highlight
+      const assistantBubbles = new Set(); // track which assistant bubbles have a matching user above
+      chatBubbleData.forEach((b, i) => {
+        const idx = b.text.toLowerCase().indexOf(q);
+        if (idx !== -1) {
+          searchMatches.push(i);
+          // Highlight all occurrences in the text
+          const textEl = b.el.querySelector('.text');
+          if (textEl) {
+            textEl.innerHTML = highlightText(b.text, q);
+          }
+        }
+      });
+
+      // Hide non-matching bubbles (but keep assistant if its preceding user matched)
+      if (searchMatches.length > 0) {
+        const matchSet = new Set(searchMatches);
+        chatBubbleData.forEach((b, i) => {
+          // Show if it matches, or if it's an assistant bubble right after a matching user
+          const prevMatches = i > 0 && matchSet.has(i - 1) && chatBubbleData[i - 1].type === 'user' && b.type === 'assistant';
+          const nextMatches = i < chatBubbleData.length - 1 && matchSet.has(i + 1) && b.type === 'user' && chatBubbleData[i + 1].type === 'assistant';
+          if (!matchSet.has(i) && !prevMatches) {
+            b.el.classList.add('search-hidden');
+          }
+        });
+      }
+
+      document.getElementById('searchInfo').textContent =
+        searchMatches.length > 0 ? `${searchMatches.length} found` : 'No results';
+
+      // Auto-jump to first match
+      if (searchMatches.length > 0) {
+        searchMatchIndex = 0;
+        scrollToSearchMatch();
+      }
+    }
+
+    function highlightText(text, query) {
+      const escaped = escapeHtml(text);
+      const escapedQuery = escapeHtml(query);
+      const regex = new RegExp('(' + escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+      return escaped.replace(regex, '<mark>$1</mark>');
+    }
+
+    function scrollToSearchMatch() {
+      if (searchMatchIndex < 0 || searchMatchIndex >= searchMatches.length) return;
+      const b = chatBubbleData[searchMatches[searchMatchIndex]];
+
+      // Update current highlight
+      document.querySelectorAll('.chat-bubble .text mark.current').forEach(m => m.classList.remove('current'));
+      const marks = b.el.querySelectorAll('.text mark');
+      if (marks.length > 0) marks[0].classList.add('current');
+
+      b.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('searchInfo').textContent =
+        `${searchMatchIndex + 1} / ${searchMatches.length}`;
+
+      // Also select the event in the timeline if it's a user bubble
+      if (b.type === 'user' && b.globalIndex !== undefined) {
+        selectEvent(b.globalIndex);
+      }
+    }
+
+    function searchNavigate(delta) {
+      if (searchMatches.length === 0) return;
+      searchMatchIndex = (searchMatchIndex + delta + searchMatches.length) % searchMatches.length;
+      scrollToSearchMatch();
+    }
+
+    function clearSearch() {
+      document.getElementById('chatSearchInput').value = '';
+      searchMatches = [];
+      searchMatchIndex = -1;
+      document.getElementById('searchInfo').textContent = '';
+      chatBubbleData.forEach(b => {
+        b.el.classList.remove('search-hidden');
+        const textEl = b.el.querySelector('.text');
+        if (textEl) textEl.innerHTML = escapeHtml(b.text);
+      });
+    }
+
+    // --- Overview panel ---
+    let overviewOpen = false;
+    let overviewCache = null;
+    let overviewSpacing = 'time'; // 'time' or 'event'
+    let overviewSortKey = 'hash'; // 'hash' | 'ai_asc' | 'ai_desc' | 'edits'
+    let aggregateChartInstance = null;
+
+    function toggleOverview() {
+      overviewOpen = !overviewOpen;
+      document.getElementById('overviewPanel').style.display = overviewOpen ? 'block' : 'none';
+      document.getElementById('overviewBtn').textContent = overviewOpen ? 'Close Overview' : 'Overview';
+      // Hide replay-specific top-bar elements when overview is open
+      const hide = overviewOpen ? 'none' : '';
+      document.getElementById('titleText').style.display = hide;
+      const sel = document.getElementById('studentSelect');
+      sel.style.display = overviewOpen ? 'none' : (sel.options.length > 1 ? '' : 'none');
+      document.getElementById('statsText').style.display = hide;
+      document.querySelectorAll('.top-bar .nav-btn:not(#overviewBtn)').forEach(b => b.style.display = hide);
+      document.getElementById('eventCounter').style.display = hide;
+      if (overviewOpen) {
+        overviewCache = null; // always reload fresh
+        loadOverview();
+      }
+    }
+
+    async function loadOverview() {
+      if (overviewCache) { renderOverview(overviewCache); return; }
+      const content = document.getElementById('overviewContent');
+      content.innerHTML = '<div style="color:#8b949e;padding:20px;">Loading all students...</div>';
+
+      try {
+        const projectParam = currentProject ? `?project=${encodeURIComponent(currentProject)}` : '';
+        const res = await fetch('/api/students' + projectParam);
+        const students = await res.json();
+
+        // Load all timelines in parallel
+        const timelines = await Promise.all(students.map(async s => {
+          try {
+            const tlParam = currentProject
+              ? `?student=${s.hash}&project=${encodeURIComponent(currentProject)}`
+              : `?student=${s.hash}`;
+            const r = await fetch('/api/timeline' + tlParam);
+            const tl = await r.json();
+            return { hash: s.short, fullHash: s.hash, events: tl.events || [] };
+          } catch (e) { return { hash: s.short, fullHash: s.hash, events: [] }; }
+        }));
+
+        overviewCache = timelines;
+        renderOverview(timelines);
+      } catch (e) {
+        content.innerHTML = '<div style="color:#f85149;padding:20px;">Error loading overview: ' + e.message + '</div>';
+      }
+    }
+
+    function toggleOverviewSpacing() {
+      overviewSpacing = overviewSpacing === 'time' ? 'event' : 'time';
+      if (overviewCache) renderOverview(overviewCache);
+    }
+
+    function changeOverviewSort(val) {
+      overviewSortKey = val;
+      if (overviewCache) renderOverview(overviewCache);
+    }
+
+    function classifyEvent(e) {
+      if (e.type === 'git_commit') {
+        const files = e.changed_files || [];
+        if (files.length > 10) return null;
+        if (files.some(f => f.ai_attributed)) return 'copilot';
+        if (files.some(f => f.likely_external)) return 'external';
+        return 'human';
+      }
+      if (e.type === 'chat_prompt') return 'chat';
+      if (e.type === 'chat_action') return 'command';
+      return null;
+    }
+
+    function renderOverview(timelines) {
+      const content = document.getElementById('overviewContent');
+      const isEvent = overviewSpacing === 'event';
+      const MIN_EDITS = 10;
+      const active = timelines.filter(tl => {
+        let edits = 0;
+        tl.events.forEach(e => {
+          if (e.type === 'git_commit') {
+            const cfs = e.changed_files || [];
+            if (cfs.length <= 10) edits += cfs.length;
+          }
+        });
+        return edits >= MIN_EDITS;
+      });
+
+      // Find global time range (only from active students)
+      let globalMin = Infinity, globalMax = -Infinity;
+      active.forEach(tl => {
+        tl.events.forEach(e => {
+          if (e.epoch) {
+            if (e.epoch < globalMin) globalMin = e.epoch;
+            if (e.epoch > globalMax) globalMax = e.epoch;
+          }
+        });
+      });
+      const globalRange = globalMax - globalMin || 1;
+
+      // Compute AI share and total edits for each student
+      const annotated = active.map(tl => {
+        let human = 0, copilot = 0, otherAi = 0;
+        tl.events.forEach(e => {
+          if (e.type !== 'git_commit') return;
+          (e.changed_files || []).forEach(cf => {
+            if (cf.ai_attributed) copilot++;
+            else if (cf.likely_external) otherAi++;
+            else human++;
+          });
+        });
+        const total = human + copilot + otherAi;
+        return { ...tl, aiShare: total ? (copilot + otherAi) / total : 0, totalEdits: total };
+      });
+
+      // Sort based on current sort key
+      const sortFns = {
+        hash: (a, b) => (a.fullHash || '').localeCompare(b.fullHash || ''),
+        ai_asc: (a, b) => a.aiShare - b.aiShare,
+        ai_desc: (a, b) => b.aiShare - a.aiShare,
+        edits: (a, b) => b.totalEdits - a.totalEdits,
+      };
+      const sorted = annotated.sort(sortFns[overviewSortKey] || sortFns.hash);
+
+      const colorMap = {
+        human: '#3fb950', copilot: '#d29922', external: '#f0883e',
+        chat: '#1f6feb', command: '#a371f7',
+      };
+      const opacityMap = { human: 1, copilot: 1, external: 1, chat: 1, command: 1 };
+
+      // Header
+      let html = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+      html += `<span style="font-size:13px;font-weight:600;color:#f0f6fc;">All Students Overview (${sorted.length})</span>`;
+      html += '<select style="background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:3px 8px;border-radius:6px;font-size:11px;" onchange="changeOverviewSort(this.value)">';
+      [{ v: 'hash', l: 'Sort: Hash' }, { v: 'ai_asc', l: 'Sort: AI share \u2191' }, { v: 'ai_desc', l: 'Sort: AI share \u2193' }, { v: 'edits', l: 'Sort: Total edits' }].forEach(o => {
+        html += `<option value="${o.v}"${overviewSortKey === o.v ? ' selected' : ''}>${o.l}</option>`;
+      });
+      html += '</select>';
+      html += `<button class="spacing-toggle" onclick="toggleOverviewSpacing()">Spacing: ${isEvent ? 'Event' : 'Time'}</button>`;
+      html += '<span style="font-size:11px;color:#8b949e;margin-left:auto;">';
+      Object.entries(colorMap).forEach(([k, c]) => {
+        const label = k === 'external' ? 'External' : k.charAt(0).toUpperCase() + k.slice(1);
+        html += `<span style="display:inline-flex;align-items:center;gap:3px;margin-left:12px;"><span style="width:10px;height:10px;border-radius:2px;background:${c};display:inline-block;"></span>${label}</span>`;
+      });
+      html += '</span></div>';
+
+      // --- Merged "All Students" timeline bar with kernel smoothing ---
+      const nBins = 200;
+      const allCats = ['human', 'copilot', 'external', 'chat', 'command'];
+      const binDensity = {};
+      allCats.forEach(c => binDensity[c] = new Float64Array(nBins));
+
+      sorted.forEach(tl => {
+        const classified = tl.events.map(e => ({ epoch: e.epoch, cls: classifyEvent(e) })).filter(e => e.cls);
+        if (classified.length < 2) return;
+
+        const nEvts = classified.length;
+        // Adaptive kernel: fewer events → wider spread to fill gaps
+        const sigma = Math.max(1.5, nBins / (nEvts * 1.5));
+        const radius = Math.ceil(3 * sigma);
+
+        // Compute this student's smoothed density per category
+        const stuBins = {};
+        allCats.forEach(c => stuBins[c] = new Float64Array(nBins));
+
+        classified.forEach((e, i) => {
+          const progress = isEvent ? i / (nEvts - 1) : (e.epoch - globalMin) / globalRange;
+          const center = progress * (nBins - 1);
+          const lo = Math.max(0, Math.floor(center) - radius);
+          const hi = Math.min(nBins - 1, Math.ceil(center) + radius);
+          for (let b = lo; b <= hi; b++) {
+            const d = (b - center) / sigma;
+            stuBins[e.cls][b] += Math.exp(-0.5 * d * d);
+          }
+        });
+
+        // Normalize: each student contributes total weight = 1.0
+        // Weight by 1/(original + interpolated points)
+        let stuTotal = 0;
+        allCats.forEach(c => { for (let b = 0; b < nBins; b++) stuTotal += stuBins[c][b]; });
+        if (stuTotal > 0) {
+          allCats.forEach(c => { for (let b = 0; b < nBins; b++) binDensity[c][b] += stuBins[c][b] / stuTotal; });
+        }
+      });
+
+      const barH = 80;
+      html += '<div style="margin-bottom:12px;">';
+      html += `<div style="font-size:11px;color:#8b949e;margin-bottom:4px;">Merged Timeline (all students overlaid, kernel-smoothed, ${isEvent ? 'normalized progress' : 'wall-clock time'})</div>`;
+      html += `<div style="position:relative;height:${barH}px;background:#21262d;border-radius:4px;overflow:hidden;">`;
+      // Stacked proportional columns
+      const binW = (100 / nBins).toFixed(4);
+      const drawOrder = ['human', 'copilot', 'external', 'chat', 'command'];
+      for (let b = 0; b < nBins; b++) {
+        const total = drawOrder.reduce((s, k) => s + binDensity[k][b], 0);
+        if (total === 0) continue;
+        let yOffset = 0;
+        for (const cat of drawOrder) {
+          const d = binDensity[cat][b];
+          if (d === 0) continue;
+          const hPct = (d / total * 100).toFixed(2);
+          const topPct = (yOffset / total * 100).toFixed(2);
+          html += `<div style="position:absolute;left:${(b * 100 / nBins).toFixed(4)}%;width:${binW}%;top:${topPct}%;height:${hPct}%;background:${colorMap[cat]};"></div>`;
+          yOffset += d;
+        }
+      }
+      html += '</div></div>';
+
+      // Per-student rows
+      sorted.forEach(tl => {
+        const classified = tl.events.map(e => ({ epoch: e.epoch, cls: classifyEvent(e) })).filter(e => e.cls);
+        if (!classified.length) return;
+
+        html += `<div class="overview-row" onclick="overviewClick('${tl.fullHash}')">`;
+        html += `<div class="overview-label">${tl.hash.slice(0, 4)} <span style="font-size:9px;color:#484f58;">(${Math.round(tl.aiShare * 100)}%)</span></div>`;
+        html += '<div class="overview-bar">';
+
+        classified.forEach((e, i) => {
+          const left = isEvent
+            ? (i / classified.length * 100).toFixed(3)
+            : ((e.epoch - globalMin) / globalRange * 100).toFixed(3);
+          const w = isEvent ? (100 / classified.length).toFixed(3) + '%' : '2px';
+          html += `<div class="overview-marker" style="left:${left}%;width:${w};background:${colorMap[e.cls]};opacity:${opacityMap[e.cls]};"></div>`;
+        });
+
+        html += '</div></div>';
+      });
+
+      // Aggregate chart — AI share over normalized progress
+      html += '<div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px;">';
+      html += '<div style="font-size:12px;font-weight:600;color:#f0f6fc;margin-bottom:8px;">Aggregate: AI Share Over Normalized Progress</div>';
+      html += '<div style="position:relative;height:160px;"><canvas id="aggregateChart"></canvas></div>';
+      html += '</div>';
+
+      // Destroy old aggregate chart before replacing DOM
+      if (aggregateChartInstance) {
+        aggregateChartInstance.destroy();
+        aggregateChartInstance = null;
+      }
+
+      content.innerHTML = html;
+
+      // Build aggregate chart
+      try {
+        const cBins = 20;
+        const bHuman = new Array(cBins).fill(0);
+        const bCopilot = new Array(cBins).fill(0);
+        const bOtherAi = new Array(cBins).fill(0);
+
+        sorted.forEach(tl => {
+          const commits = tl.events.filter(e => e.type === 'git_commit' && (e.changed_files || []).length <= 10);
+          if (commits.length < 2) return;
+          commits.forEach((e, i) => {
+            const progress = i / (commits.length - 1);
+            const bin = Math.min(cBins - 1, Math.floor(progress * cBins));
+            (e.changed_files || []).forEach(cf => {
+              if (cf.ai_attributed) bCopilot[bin]++;
+              else if (cf.likely_external) bOtherAi[bin]++;
+              else bHuman[bin]++;
+            });
+          });
+        });
+
+        const chartLabels = Array.from({ length: cBins }, (_, i) => Math.round((i + 0.5) / cBins * 100) + '%');
+        const chartTotals = bHuman.map((h, i) => h + bCopilot[i] + bOtherAi[i]);
+        const copilotPct = chartTotals.map((t, i) => t ? bCopilot[i] / t * 100 : 0);
+        const otherAiPct = chartTotals.map((t, i) => t ? bOtherAi[i] / t * 100 : 0);
+
+        const canvas = document.getElementById('aggregateChart');
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          aggregateChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: chartLabels,
+              datasets: [
+                { label: 'Copilot %', data: copilotPct, backgroundColor: colorMap.copilot + 'cc', stack: 'ai' },
+                { label: 'External %', data: otherAiPct, backgroundColor: colorMap.external + 'cc', stack: 'ai' },
+              ],
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: {
+                legend: { labels: { color: '#8b949e', font: { size: 10 } } },
+              },
+              scales: {
+                x: { title: { display: true, text: 'Project progress (normalized)', color: '#8b949e' }, ticks: { color: '#484f58' }, grid: { color: '#21262d' }, stacked: true },
+                y: { min: 0, title: { display: true, text: 'AI edit share %', color: '#8b949e' }, ticks: { color: '#484f58' }, grid: { color: '#21262d' }, stacked: true },
+              },
+            },
+          });
+        }
+      } catch (e) {
+        console.error('Failed to create aggregate chart:', e);
+      }
+    }
+
+    function overviewClick(hash) {
+      toggleOverview(); // closes overview and restores top-bar elements
+      document.getElementById('studentSelect').value = hash;
+      switchStudent(hash);
+    }
+  </script>
+</body>
+
+</html>
