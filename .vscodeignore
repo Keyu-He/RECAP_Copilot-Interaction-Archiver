@@ -13,3 +13,7 @@ DATA_COLLECTION.md
 downloaded_snapshots/**
 local_analysis/**
 filtered_*/**
+.mypy_cache/**
+replay_app/**
+*.vsix
+package-lock.json
