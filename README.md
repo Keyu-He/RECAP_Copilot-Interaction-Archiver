@@ -1,6 +1,6 @@
-# RECAP
+# RECAP (ACL 2026, System Demonstrations)
 
-**RECAP** — *An End-to-End Platform for Capturing, Replaying, and Analyzing AI-Assisted Programming Interactions* (ACL 2026, System Demonstrations) — is a research tool that automatically captures and archives your interactions with GitHub Copilot, producing a detailed timeline of your coding session including chat logs and code snapshots. Formerly known as "Copilot Interaction Archiver".
+**RECAP**, *An End-to-End Platform for Capturing, Replaying, and Analyzing AI-Assisted Programming Interactions*, is a research tool that automatically captures and archives your interactions with GitHub Copilot, producing a detailed timeline of your coding session including chat logs and code snapshots.
 
 The extension supports two modes:
 - **Upload Mode** — uploads captures to a backend (used in CMU course deployments; requires an Andrew ID and class password).
