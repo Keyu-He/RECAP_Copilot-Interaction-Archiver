@@ -25,6 +25,7 @@ export class ShadowGitManager {
     public isAgentActing: boolean = false;
     private s3Uploader: S3Uploader;
     private globalState: vscode.Memento;
+    private secrets: vscode.SecretStorage;
 
     // Debounce & State Tracking
     private lastUploadedHead: string = '';
@@ -37,6 +38,7 @@ export class ShadowGitManager {
     constructor(context: vscode.ExtensionContext) {
         this.s3Uploader = new S3Uploader(context.secrets);
         this.globalState = context.globalState;
+        this.secrets = context.secrets;
         this.initialize();
     }
 
@@ -525,6 +527,20 @@ export class ShadowGitManager {
 
     async syncToS3(force: boolean = false) {
         if (!this.shadowRoot) return;
+
+        // Local-only mode: skip bundling and upload.
+        const cfg = vscode.workspace.getConfiguration('copilotArchiver');
+        if (cfg.get<boolean>('localMode', false)) {
+            Logger.debug('ShadowGit: Local mode — skipping S3 sync.');
+            return;
+        }
+
+        // No token: skip bundling — uploads would no-op downstream anyway.
+        const token = await this.secrets.get('archiver.jwt');
+        if (!token) {
+            Logger.debug('ShadowGit: No token — skipping S3 sync.');
+            return;
+        }
 
         // Prevent concurrent uploads
         if (this.isSyncing) {

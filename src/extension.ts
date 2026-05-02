@@ -64,12 +64,31 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Status Bar Menu
     context.subscriptions.push(vscode.commands.registerCommand('copilotArchiver.showMenu', async () => {
+        const cfg = vscode.workspace.getConfiguration('copilotArchiver');
+        const localMode = cfg.get<boolean>('localMode', false);
         const token = await context.secrets.get('archiver.jwt');
         const user = context.globalState.get<string>('archiver.user_display');
 
         const items: vscode.QuickPickItem[] = [];
 
-        if (token && user) {
+        if (localMode) {
+            items.push({
+                label: '$(file-directory) Mode: Local Only',
+                description: 'Captures stay on this machine (no upload)',
+                detail: 'Data is saved in .snapshots/ and .archiver_shadow/',
+                alwaysShow: true
+            });
+            items.push({
+                label: '$(cloud-upload) Capture Repo Snapshot',
+                description: 'Save a snapshot to .snapshots/',
+                alwaysShow: true
+            });
+            items.push({
+                label: '$(sign-in) Switch to Upload Mode',
+                description: 'Enable backend upload (requires login)',
+                alwaysShow: true
+            });
+        } else if (token && user) {
             // Compute ID for display
             const finalId = computeBackendId(user);
             const isHashed = finalId !== user;
@@ -98,10 +117,20 @@ export async function activate(context: vscode.ExtensionContext) {
                 description: 'Clear credentials',
                 alwaysShow: true
             });
+            items.push({
+                label: '$(file-directory) Switch to Local Only Mode',
+                description: 'Stop uploading; keep capturing locally',
+                alwaysShow: true
+            });
         } else {
             items.push({
-                label: '$(sign-in) Log In',
+                label: '$(sign-in) Log In (Upload Mode)',
                 description: 'Connect to Archiver Backend',
+                alwaysShow: true
+            });
+            items.push({
+                label: '$(file-directory) Use Local Only',
+                description: 'Skip login; capture locally without upload',
                 alwaysShow: true
             });
         }
@@ -134,37 +163,47 @@ export async function activate(context: vscode.ExtensionContext) {
         if (selection.label.includes('User:')) {
             vscode.env.clipboard.writeText(user || '');
             vscode.window.showInformationMessage('Andrew ID copied to clipboard.');
-        } else if (selection.label.includes('Hashed ID:') || selection.label.includes('ID:')) {
+        } else if (selection.label.includes('Hashed ID:') ||
+                   (selection.label.includes('ID:') && !selection.label.includes('Mode:'))) {
             const finalId = computeBackendId(user || '');
             vscode.env.clipboard.writeText(finalId);
             vscode.window.showInformationMessage('User ID copied to clipboard.');
         } else if (selection.label.includes('Capture Repo Snapshot')) {
-            // Manually trigger snapshot
-            // We need access to snapshotManager here. It is defined later in activate.
-            // Move this registration AFTER snapshotManager init? Or use command if available.
-            vscode.commands.executeCommand('copilotArchiver.captureNow'); // We need to implement this command or expose it
+            vscode.commands.executeCommand('copilotArchiver.captureNow');
         } else if (selection.label.includes('Log Out')) {
             vscode.commands.executeCommand('copilotArchiver.logout');
-        } else if (selection.label.includes('Log In')) {
+        } else if (selection.label.includes('Log In') || selection.label.includes('Switch to Upload Mode')) {
+            // Login resets localMode on success.
             vscode.commands.executeCommand('copilotArchiver.login');
+        } else if (selection.label.includes('Use Local Only') || selection.label.includes('Switch to Local Only')) {
+            await cfg.update('localMode', true, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage('Copilot Archiver: Local Only mode enabled. Captures will stay on this machine.');
+            updateStatusBar();
         }
     }));
 
     const updateStatusBar = async () => {
         if (!statusBarItem) return;
+        const cfg = vscode.workspace.getConfiguration('copilotArchiver');
+        const localMode = cfg.get<boolean>('localMode', false);
         const token = await context.secrets.get('archiver.jwt');
         const user = context.globalState.get<string>('archiver.user_display');
 
-        if (token) {
+        if (localMode) {
+            statusBarItem.text = '$(file-directory) Archiver: Local Only';
+            statusBarItem.backgroundColor = undefined;
+            statusBarItem.tooltip = 'Local Only mode — captures stay on this machine. Click to open Menu.';
+            statusBarItem.command = 'copilotArchiver.showMenu';
+        } else if (token) {
             statusBarItem.text = `$(check) Archiver: ${user}`;
             statusBarItem.backgroundColor = undefined;
             statusBarItem.tooltip = 'Copilot Archiver Active. Click to open Menu.';
             statusBarItem.command = 'copilotArchiver.showMenu';
         } else {
-            statusBarItem.text = '$(alert) Archiver: Login Required';
+            statusBarItem.text = '$(alert) Archiver: Setup Required';
             statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-            statusBarItem.tooltip = 'Click to Login to Copilot Archiver';
-            statusBarItem.command = 'copilotArchiver.login';
+            statusBarItem.tooltip = 'Click to choose Upload Mode or Local Only.';
+            statusBarItem.command = 'copilotArchiver.showMenu';
         }
         statusBarItem.show();
     };
@@ -359,6 +398,10 @@ export async function activate(context: vscode.ExtensionContext) {
                 // Store raw ID in globalState for display only
                 await context.globalState.update('archiver.user_display', andrewId);
 
+                // Logging in implies upload mode; clear any prior localMode override.
+                await vscode.workspace.getConfiguration('copilotArchiver')
+                    .update('localMode', false, vscode.ConfigurationTarget.Global);
+
                 vscode.window.showInformationMessage(`Copilot Archiver: Login successful as ${andrewId}`);
                 updateStatusBar();
 
@@ -400,18 +443,47 @@ export async function activate(context: vscode.ExtensionContext) {
 
     Logger.info('ChatSessionWatcher initialized and listening for changes.');
 
-    // Proactive Login Check
+    // First-run mode selection. Skipped if the user is already in local mode
+    // or already logged in (token present); otherwise a one-time modal lets
+    // them pick Upload (login) or Local Only. Dismissal leaves the status
+    // bar in "Setup Required" — they can choose later from the menu.
     setTimeout(async () => {
-        const token = await context.secrets.get('archiver.jwt');
-        if (!token) {
-            Logger.info('No token found on startup. Prompting for login...');
-            vscode.commands.executeCommand('copilotArchiver.login');
+        const cfg = vscode.workspace.getConfiguration('copilotArchiver');
+        if (cfg.get<boolean>('localMode', false)) {
+            Logger.info('Copilot Archiver running in Local Only mode.');
+            return;
         }
-    }, 1000); // 1s delay to let VS Code settle
+        const token = await context.secrets.get('archiver.jwt');
+        if (token) return;
+
+        const choice = await vscode.window.showInformationMessage(
+            'Copilot Archiver: choose how to use this extension.',
+            {
+                modal: true,
+                detail:
+                    'Upload Mode: connects to a backend and uploads captures. Requires login credentials provided by your instructor or research team (e.g., a CMU Andrew ID + class password).\n\n' +
+                    'Local Only: no login, no uploads. All captures stay on this machine inside .snapshots/ and .archiver_shadow/.'
+            },
+            'Upload Mode (Login)', 'Local Only'
+        );
+
+        if (choice === 'Upload Mode (Login)') {
+            vscode.commands.executeCommand('copilotArchiver.login');
+        } else if (choice === 'Local Only') {
+            await cfg.update('localMode', true, vscode.ConfigurationTarget.Global);
+            vscode.window.showInformationMessage(
+                'Copilot Archiver: Local Only mode enabled. Captures will stay on this machine.'
+            );
+            updateStatusBar();
+        } else {
+            Logger.info('User dismissed mode selection.');
+        }
+    }, 1000); // delay to let VS Code finish activating
 
     // Listen for Configuration Changes to update Status Bar
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('github.copilot.chat.logLevel')) {
+        if (e.affectsConfiguration('github.copilot.chat.logLevel') ||
+            e.affectsConfiguration('copilotArchiver.localMode')) {
             updateStatusBar();
         }
     }));

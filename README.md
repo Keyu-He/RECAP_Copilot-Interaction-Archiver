@@ -1,7 +1,12 @@
 # Copilot Interaction Archiver
 
 **The Copilot Interaction Archiver** is a research tool designed to automatically capture and archive your interactions with GitHub Copilot. It creates a detailed timeline of your coding session, including chat logs and code snapshots.
-**Note:** You must provide your CMU Andrew ID and Class Password to login to this extension.
+
+The extension supports two modes:
+- **Upload Mode** — uploads captures to a backend (used in CMU course deployments; requires an Andrew ID and class password).
+- **Local Only Mode** — captures stay on your machine inside `.snapshots/` and `.archiver_shadow/`. No login or backend required. See [Local Only Mode](#local-only-mode-no-login) below.
+
+The first time you enable the extension in a workspace, it will prompt you to pick one. You can switch modes any time from the status bar menu.
 
 ## Prerequisites
 *   **VS Code** (v1.80.0 or higher)
@@ -33,11 +38,13 @@ When you open a folder/workspace for the first time, you will see a notification
 - Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
 - Run: **`Copilot Archiver: Enable for this Workspace`**.
 
-### 3. Log In
+### 3. Log In (Upload Mode)
 1.  Open Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`).
 2.  Run: **`Copilot Archiver: Login`**.
 3.  Enter your **Andrew ID**.
 4.  Enter the **Class Password**.
+
+> If you do not have credentials, you can use [Local Only Mode](#local-only-mode-no-login) instead — everything is captured locally and nothing is uploaded.
 
 <!-- ![Login Flow](assets/img/login.gif) -->
 ![Login Flow](https://keyu-he.github.io/assets/img/projects/copilot_interaction_archiver/login.gif)
@@ -72,6 +79,22 @@ For the extension to better capture the interactions, **GitHub Copilot Chat shou
 > [!WARNING]
 > This uploads your code for **research data collection only**. You must still submit your homework for grading according to the course instructions.
 
+
+---
+
+## Local Only Mode (No Login)
+
+If you don't have credentials — or you just want to use the archiver as a personal coding-history tool — pick **Local Only** when prompted (or click the status bar item and choose **Use Local Only** / **Switch to Local Only Mode**).
+
+In Local Only mode:
+- The extension never contacts the backend.
+- Nothing is uploaded to S3.
+- All captures still happen on your machine: chat sessions land in `.snapshots/`, file edits are committed to a hidden git repo at `.archiver_shadow/`, and manual snapshots include a copy of the current workspace.
+- You can browse the captured timeline locally with `replay_app/replay_server.py`.
+
+You can switch back to Upload Mode any time by clicking the status bar item and choosing **Switch to Upload Mode** (which triggers the login flow).
+
+You can also flip the mode directly via the setting `copilotArchiver.localMode`.
 
 ---
 

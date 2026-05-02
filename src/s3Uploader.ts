@@ -11,18 +11,17 @@ export class S3Uploader {
 
         if (!backendUrl) return;
 
+        // Local-only mode: skip backend entirely.
+        if (config.get<boolean>('localMode', false)) {
+            return;
+        }
+
         try {
-            // Get JWT Token
             const token = await this.secretStorage.get('archiver.jwt');
             if (!token) {
+                // Silent bail. A notification here would stack on every fired
+                // upload and race the activation-time mode modal.
                 Logger.warn("Upload skipped: No Login Token found.");
-                const selection = await vscode.window.showErrorMessage(
-                    "Copilot Archiver: You are not logged in. Snapshots are not being uploaded.",
-                    "Login"
-                );
-                if (selection === "Login") {
-                    vscode.commands.executeCommand('copilotArchiver.login');
-                }
                 return;
             }
 

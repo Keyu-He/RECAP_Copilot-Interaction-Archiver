@@ -168,8 +168,8 @@ export class SnapshotManager {
             };
             fs.writeFileSync(path.join(tempDir, '_meta.json'), JSON.stringify(meta, null, 2));
 
-            // Upload the snapshot to S3 immediately
-            if (config.get<boolean>('s3.enabled', false)) {
+            // Upload the snapshot to S3 immediately (skipped in local-only mode)
+            if (config.get<boolean>('s3.enabled', false) && !config.get<boolean>('localMode', false)) {
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
                 const s3Key = `${s3FolderPrefix}/interaction_snapshots/${timestamp || currTimestamp}`;
 
@@ -195,6 +195,7 @@ export class SnapshotManager {
     async uploadDirectory(dirPath: string, s3Prefix: string): Promise<void> {
         const config = vscode.workspace.getConfiguration('copilotArchiver');
         if (!config.get<boolean>('s3.enabled', false)) return;
+        if (config.get<boolean>('localMode', false)) return;
 
         const files: string[] = [];
 
@@ -303,9 +304,9 @@ export class SnapshotManager {
                 return;
             }
 
-            // Upload Logic
+            // Upload Logic (skipped in local-only mode)
             const config = vscode.workspace.getConfiguration('copilotArchiver');
-            if (config.get<boolean>('s3.enabled', false)) {
+            if (config.get<boolean>('s3.enabled', false) && !config.get<boolean>('localMode', false)) {
                 // S3 Path: <prefix>/<chatId>/interaction_snapshots/<timestamp>
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
                 const s3Key = `${s3FolderPrefix}/${chatId}/interaction_snapshots/${timestamp}`;
@@ -367,8 +368,8 @@ export class SnapshotManager {
                 }
             }
 
-            // Upload files to S3
-            if (config.get<boolean>('s3.enabled', false)) {
+            // Upload files to S3 (skipped in local-only mode)
+            if (config.get<boolean>('s3.enabled', false) && !config.get<boolean>('localMode', false)) {
                 const s3FolderPrefix = config.get<string>('s3.folderPrefix', 'copilot-snapshots');
                 const uploadPromises: Promise<void>[] = [];
 

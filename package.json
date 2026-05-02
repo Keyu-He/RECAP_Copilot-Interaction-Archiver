@@ -2,7 +2,7 @@
   "name": "copilot-archiver",
   "displayName": "Copilot Interaction Archiver",
   "description": "Archives interaction data from GitHub Copilot Chat",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "publisher": "Copilot-Archiver",
   "icon": "icon.png",
   "repository": {
@@ -99,6 +99,11 @@
           "type": "string",
           "default": "http://98.80.150.124:3000",
           "description": "URL of the Copilot Archiver Backend Server (e.g., http://98.80.150.124:3000)"
+        },
+        "copilotArchiver.localMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Local-only mode: do not connect to the backend or upload anything. All captures stay on this machine inside .snapshots/ and .archiver_shadow/."
         }
       }
     }
