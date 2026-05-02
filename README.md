@@ -1,5 +1,7 @@
 # Copilot Interaction Archiver
 
+> Published at **ACL 2026 — System Demonstrations**.
+
 **The Copilot Interaction Archiver** is a research tool designed to automatically capture and archive your interactions with GitHub Copilot. It creates a detailed timeline of your coding session, including chat logs and code snapshots.
 
 The extension supports two modes:
